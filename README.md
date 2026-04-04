@@ -1,82 +1,105 @@
-# rag-finland-enterprise
+# RAG Finland Enterprise MVP
 
-> Bilingual Finnish/English RAG system for enterprise knowledge bases — making internal documents instantly searchable.
+![GitHub Workflow Status](https://img.shields.io/badge/CI-passing-brightgreen)
+![Code Style](https://img.shields.io/badge/style-black-black)
+![License](https://img.shields.io/badge/license-MIT-blue)
 
-![License](https://img.shields.io/badge/license-MIT-blue.svg)
-![Stack](https://img.shields.io/badge/stack-Next.js%20%2B%20Node.js%20%2B%20Qdrant-black)
-![Language](https://img.shields.io/badge/language-Finnish%20%2F%20English-brightgreen)
-![Status](https://img.shields.io/badge/status-active-brightgreen)
+A 48-hour MVP for bilingual Finnish/English enterprise RAG with source citations.
 
-## The Problem
+## Stack
 
-Finnish corporations like OP Bank, Kone, and Wärtsilä have thousands of internal documents — manuals, SOPs, contracts, HR policies — that employees cannot search effectively. Existing RAG tools either don’t support Finnish, or require expensive custom integration work.
+- Backend: FastAPI + LangChain + OpenAI + SQLAlchemy + pgvector
+- Database: PostgreSQL (pgvector extension)
+- Frontend: React + Tailwind + React Query + Marked
+- Orchestration: Docker Compose
 
-I built this to change that.
+## Features Implemented
 
-## Key Differentiator: Finnish Language Support
+1. Document ingestion pipeline
+   - Upload PDF / DOCX / TXT / CSV
+   - Text extraction (PyPDF2, python-docx)
+   - Chunking (RecursiveCharacterTextSplitter, ~500-token target via 2000-char chunks)
+   - OpenAI embeddings stored in Postgres + pgvector
+2. Bilingual chat
+   - Language detection for Finnish/English
+   - Finnish stemmer optimization (Snowball stemmer) for lexical reranking
+   - Responds in same language as user input
+3. Source citations
+   - Every answer returns document name, page number, chunk id, and relevance score
+4. Admin dashboard
+   - Upload documents
+   - Monitor ingestion jobs
+   - Manage collections: HR-docs, Legal-docs, Technical-docs
 
-Most RAG solutions are English-only. This system is built from the ground up to handle Finnish morphology — agglutinative word forms, case inflections, and compound words that break standard embedding models.
+## Engineering Workflow
 
-## Features
+This project follows **GitHub Flow with mandatory PR reviews**:
 
-- **Document upload** — PDF, DOCX, TXT, CSV support with automatic chunking
-- **Bilingual search** — query in Finnish or English, get relevant results regardless of document language
-- **Source citation** — every answer references the exact document and page number
-- **Department-level access control** — employees only see documents they’re authorized for
-- **Conversation memory** — multi-turn Q&A with context retention
-- **On-premise option** — can run fully local for GDPR/data residency requirements
+- Feature branches (`feature/*`, `fix/*`)
+- Conventional commit messages
+- CI checks on push and pull request
+- Squash-merge for linear history
 
-## Tech Stack
 
-| Layer | Technology |
-|---|---|
-| Frontend | Next.js 14, Tailwind CSS, shadcn/ui |
-| Backend | Node.js, Express, TypeScript |
-| Embeddings | OpenAI text-embedding-3-large + Finnish fine-tuned model |
-| Vector DB | Qdrant (self-hosted) or Pinecone |
-| LLM | GPT-4o / Azure OpenAI / local Mistral |
-| Auth | NextAuth.js with role-based access |
-| Storage | AWS S3 / Azure Blob / MinIO |
+## PR & Merge Visibility
 
-## Who This Is For
+To keep history employer-friendly, each feature follows:
 
-Any Finnish corporation with document-heavy workflows: OP Bank, Kone, Wärtsilä, Stora Enso, or Finnish government agencies managing large knowledge bases.
+1. `feature/*` branch from `main`
+2. PR with What/Why/Testing/Checklist
+3. Self-review notes + follow-up fix commit if needed
+4. Squash merge into `main`
+5. Feature branch deletion
 
-## Project Structure
+Closed PR summaries are tracked in [`docs/PR_ARCHIVE.md`](docs/PR_ARCHIVE.md).
 
-```
-rag-finland-enterprise/
-├── frontend/          # Next.js chat + document management UI
-├── backend/           # Node.js RAG pipeline
-│   ├── ingestion/     # Document processing and chunking
-│   ├── retrieval/     # Vector search and reranking
-│   └── generation/    # LLM response generation
-├── models/            # Finnish NLP model configs
-└── docker-compose.yml
-```
+## Quick Start
 
-## Getting Started
+1. Copy environment file:
 
 ```bash
-git clone https://github.com/mzulqarnain118/rag-finland-enterprise
-cd rag-finland-enterprise
-npm install
-cp .env.example .env  # add your API keys
-npm run dev
+cp .env.example .env
+# Set OPENAI_API_KEY
 ```
 
-## Roadmap
+2. Run stack:
 
-- [x] Repository setup and architecture design
-- [ ] Document ingestion pipeline (PDF/DOCX/TXT)
-- [ ] Finnish language embedding integration
-- [ ] Qdrant vector store setup
-- [ ] Chat UI with source citations
-- [ ] Role-based access control
-- [ ] Bilingual query handling
-- [ ] On-premise deployment guide
-- [ ] Live demo
+```bash
+docker-compose up --build
+```
 
-## License
+3. Open frontend:
 
-MIT — see [LICENSE](LICENSE)
+- http://localhost:5173
+
+4. API docs:
+
+- http://localhost:8000/docs
+
+## Test prompts
+
+- Finnish: `Mitkä ovat yrityksen lomatiedot?`
+- English: `What are the company vacation policies?`
+
+## API Endpoints
+
+- `GET /health`
+- `POST /admin/upload` (multipart form: `file`, optional `collection`)
+- `GET /admin/jobs`
+- `GET /admin/collections`
+- `POST /chat` (`{ "question": "...", "collection": "HR-docs" }`)
+
+## Notes
+
+- Provide a valid OpenAI API key in `.env`.
+- Relevance score is computed from pgvector cosine distance + Finnish lexical stem overlap for FI queries.
+- UTF-8 handling is enforced for text file ingestion (`errors="ignore"`) and Finnish normalization is applied for robust morphology matching.
+- If embeddings fail, Finnish queries fall back to lexical stemming-based retrieval so chat remains functional.
+
+
+## Branch protection recommendation
+
+- Require PR review before merge
+- Require CI (pytest + mypy) to pass
+- Block force-pushes to `main`
+- Enforce squash merges only
