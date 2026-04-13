@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import traceback
 import uuid
 from typing import Literal
 
@@ -58,7 +59,7 @@ class ChatRequest(BaseModel):
 
 class ChatResponse(BaseModel):
     answer: str
-    language: Literal["fi", "en"]
+    language: Literal["fi", "en", "sv"]
     citations: list[dict]
     session_id: str = ""
 
@@ -433,7 +434,7 @@ def chat(payload: ChatRequest, db: Session = Depends(get_db)):
         lang = detect(question)
     except Exception:
         lang = "en"
-    language: Literal["fi", "en"] = "fi" if lang == "fi" else "en"
+    language: Literal["fi", "en", "sv"] = "fi" if lang == "fi" else ("sv" if lang == "sv" else "en")
 
     top_rows = []
     try:
@@ -451,7 +452,8 @@ def chat(payload: ChatRequest, db: Session = Depends(get_db)):
             """
         )
 
-        rows = db.execute(sql, {"query_vector": q_emb, "collection": payload.collection}).mappings().all()
+        q_vec_str = str(q_emb)
+        rows = db.execute(sql, {"query_vector": q_vec_str, "collection": payload.collection}).mappings().all()
 
         ranked = []
         for r in rows:
@@ -463,23 +465,31 @@ def chat(payload: ChatRequest, db: Session = Depends(get_db)):
         ranked.sort(key=lambda x: x["score"], reverse=True)
         top_rows = ranked[:5]
     except Exception:
+        logger.error("Vector search failed: %s", traceback.format_exc())
         if language == "fi":
             top_rows = _lexical_fallback_rows(db, payload.collection, question)
 
     if not top_rows:
-        msg = (
-            "En löytänyt tietoa valitusta kokoelmasta." if language == "fi" else "I couldn't find relevant information in that collection."
-        )
+        _no_info = {
+            "fi": "En löytänyt tietoa valitusta kokoelmasta.",
+            "sv": "Jag kunde inte hitta relevant information i den samlingen.",
+            "en": "I couldn't find relevant information in that collection.",
+        }
+        msg = _no_info.get(language, _no_info["en"])
         db.add(ChatMessage(session_id=session_id, role="user", content=question, language=language, collection=payload.collection))
         db.add(ChatMessage(session_id=session_id, role="assistant", content=msg, language=language, collection=payload.collection, citations_json=[]))
         db.commit()
         return ChatResponse(answer=msg, language=language, citations=[], session_id=session_id)
 
     context = "\n\n".join([f"[{r['document_name']} p.{r['page']}] {r['content']}" for r in top_rows])
-    sys_fi = "Vastaa suomeksi käyttäjän kysymykseen käyttäen vain annettua kontekstia."
-    sys_en = "Answer in English using only the provided context."
+    _sys_prompts = {
+        "fi": "Vastaa suomeksi käyttäjän kysymykseen käyttäen vain annettua kontekstia.",
+        "sv": "Svara på svenska på användarens fråga med enbart den angivna kontexten.",
+        "en": "Answer in English using only the provided context.",
+    }
+    sys_prompt = _sys_prompts.get(language, _sys_prompts["en"])
     prompt = (
-        f"System: {sys_fi if language == 'fi' else sys_en}\n"
+        f"System: {sys_prompt}\n"
         f"Question: {question}\n"
         f"Context:\n{context}\n"
         "Include concise answer and mention if policy details are missing."
@@ -521,7 +531,8 @@ def _retrieve_context(question: str, collection: str, language: str, db: Session
             LIMIT 12
             """
         )
-        rows = db.execute(sql, {"query_vector": q_emb, "collection": collection}).mappings().all()
+        q_vec_str = str(q_emb)
+        rows = db.execute(sql, {"query_vector": q_vec_str, "collection": collection}).mappings().all()
         ranked = []
         for r in rows:
             lexical_boost = 0.0
@@ -549,7 +560,7 @@ async def chat_stream(request: Request, payload: ChatRequest, db: Session = Depe
         lang = detect(question)
     except Exception:
         lang = "en"
-    language: Literal["fi", "en"] = "fi" if lang == "fi" else "en"
+    language: Literal["fi", "en", "sv"] = "fi" if lang == "fi" else ("sv" if lang == "sv" else "en")
 
     top_rows = _retrieve_context(question, payload.collection, language, db)
 
@@ -559,7 +570,12 @@ async def chat_stream(request: Request, payload: ChatRequest, db: Session = Depe
     ]
 
     if not top_rows:
-        msg = "En löytänyt tietoa valitusta kokoelmasta." if language == "fi" else "I couldn't find relevant information in that collection."
+        _no_info = {
+            "fi": "En löytänyt tietoa valitusta kokoelmasta.",
+            "sv": "Jag kunde inte hitta relevant information i den samlingen.",
+            "en": "I couldn't find relevant information in that collection.",
+        }
+        msg = _no_info.get(language, _no_info["en"])
         db.add(ChatMessage(session_id=session_id, role="user", content=question, language=language, collection=payload.collection))
         db.add(ChatMessage(session_id=session_id, role="assistant", content=msg, language=language, collection=payload.collection, citations_json=[]))
         db.commit()
@@ -572,7 +588,12 @@ async def chat_stream(request: Request, payload: ChatRequest, db: Session = Depe
         return EventSourceResponse(no_results_gen())
 
     context = "\n\n".join([f"[{r['document_name']} p.{r['page']}] {r['content']}" for r in top_rows])
-    sys_msg = "Vastaa suomeksi käyttäjän kysymykseen käyttäen vain annettua kontekstia." if language == "fi" else "Answer in English using only the provided context."
+    _sys_prompts_stream = {
+        "fi": "Vastaa suomeksi käyttäjän kysymykseen käyttäen vain annettua kontekstia.",
+        "sv": "Svara på svenska på användarens fråga med enbart den angivna kontexten.",
+        "en": "Answer in English using only the provided context.",
+    }
+    sys_msg = _sys_prompts_stream.get(language, _sys_prompts_stream["en"])
     prompt = f"System: {sys_msg}\nQuestion: {question}\nContext:\n{context}\nInclude concise answer and mention if policy details are missing."
 
     async def stream_gen():

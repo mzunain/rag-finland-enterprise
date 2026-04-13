@@ -132,6 +132,21 @@ def test_chat_embedding_failure_finnish_fallback(mock_embeddings_cls, client, mo
     assert data["language"] == "fi"
 
 
+@patch("app.main.ChatOpenAI")
+@patch("app.main.OpenAIEmbeddings")
+def test_chat_swedish_detected(mock_embeddings_cls, mock_llm_cls, client, mock_db_session):
+    mock_embeddings = MagicMock()
+    mock_embeddings.embed_query.return_value = [0.0] * 1536
+    mock_embeddings_cls.return_value = mock_embeddings
+    mock_db_session.execute.return_value.mappings.return_value.all.return_value = []
+
+    resp = client.post("/chat", json={"question": "Hur många semesterdagar har anställda?", "collection": "HR-docs"})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["language"] == "sv"
+    assert "hitta" in data["answer"].lower() or "information" in data["answer"].lower()
+
+
 @patch("app.main.OpenAIEmbeddings")
 def test_upload_unsupported_file_type(mock_embeddings_cls, client, mock_db_session):
     mock_db_session.add = MagicMock()
