@@ -21,11 +21,11 @@ export function uploadDocument(formData) {
   return fetchJSON('/admin/upload', { method: 'POST', body: formData })
 }
 
-export function sendChat(question, collection) {
+export function sendChat(question, collection, sessionId = '') {
   return fetchJSON('/chat', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ question, collection }),
+    body: JSON.stringify({ question, collection, session_id: sessionId }),
   })
 }
 
@@ -47,4 +47,16 @@ export function getDocumentChunks(documentName, collection, page = 1) {
 
 export function getStats() {
   return fetchJSON('/admin/stats')
+}
+
+export function getChatSessions() {
+  return fetchJSON('/chat/sessions')
+}
+
+export function getChatHistory(sessionId) {
+  return fetchJSON(`/chat/history/${encodeURIComponent(sessionId)}`)
+}
+
+export function deleteChatSession(sessionId) {
+  return fetchJSON(`/chat/sessions/${encodeURIComponent(sessionId)}`, { method: 'DELETE' })
 }

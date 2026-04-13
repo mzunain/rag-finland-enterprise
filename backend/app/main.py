@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import uuid
 from typing import Literal
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
@@ -14,7 +15,7 @@ from sqlalchemy.orm import Session
 from .config import settings
 from sqlalchemy import func as sa_func
 
-from .db import DocumentChunk, IngestionJob, SessionLocal, init_db
+from .db import ChatMessage, DocumentChunk, IngestionJob, SessionLocal, init_db
 from .finnish import finnish_search_text, stem_overlap_ratio
 from .ingestion import chunk_pages, extract_text
 
@@ -49,12 +50,14 @@ def on_startup():
 class ChatRequest(BaseModel):
     question: str
     collection: str = "HR-docs"
+    session_id: str = ""
 
 
 class ChatResponse(BaseModel):
     answer: str
     language: Literal["fi", "en"]
     citations: list[dict]
+    session_id: str = ""
 
 
 @app.get("/health")
@@ -190,6 +193,68 @@ def admin_stats(db: Session = Depends(get_db)):
     }
 
 
+@app.get("/chat/sessions")
+def chat_sessions(db: Session = Depends(get_db)):
+    subq = (
+        db.query(
+            ChatMessage.session_id,
+            sa_func.min(ChatMessage.content).label("first_message"),
+            sa_func.count(ChatMessage.id).label("message_count"),
+            sa_func.max(ChatMessage.created_at).label("last_active"),
+            sa_func.min(ChatMessage.collection).label("collection"),
+        )
+        .filter(ChatMessage.role == "user")
+        .group_by(ChatMessage.session_id)
+        .order_by(sa_func.max(ChatMessage.created_at).desc())
+        .limit(30)
+        .all()
+    )
+    return {
+        "sessions": [
+            {
+                "session_id": r.session_id,
+                "preview": (r.first_message or "")[:80],
+                "message_count": r.message_count,
+                "last_active": str(r.last_active) if r.last_active else None,
+                "collection": r.collection,
+            }
+            for r in subq
+        ]
+    }
+
+
+@app.get("/chat/history/{session_id}")
+def chat_history(session_id: str, db: Session = Depends(get_db)):
+    rows = (
+        db.query(ChatMessage)
+        .filter(ChatMessage.session_id == session_id)
+        .order_by(ChatMessage.created_at)
+        .all()
+    )
+    return {
+        "session_id": session_id,
+        "messages": [
+            {
+                "id": r.id,
+                "role": r.role,
+                "content": r.content,
+                "language": r.language,
+                "collection": r.collection,
+                "citations": r.citations_json or [],
+                "created_at": str(r.created_at) if r.created_at else None,
+            }
+            for r in rows
+        ],
+    }
+
+
+@app.delete("/chat/sessions/{session_id}")
+def delete_session(session_id: str, db: Session = Depends(get_db)):
+    count = db.query(ChatMessage).filter(ChatMessage.session_id == session_id).delete()
+    db.commit()
+    return {"deleted_session": session_id, "messages_removed": count}
+
+
 def _lexical_fallback_rows(db: Session, collection: str, question: str):
     rows = (
         db.query(DocumentChunk.id, DocumentChunk.document_name, DocumentChunk.page, DocumentChunk.content, DocumentChunk.search_text)
@@ -265,7 +330,9 @@ def chat(payload: ChatRequest, db: Session = Depends(get_db)):
     question = payload.question.strip()
     if not question:
         raise HTTPException(status_code=400, detail="Question is required")
-    logger.info("Chat query: collection=%s lang_detect_pending question_len=%d", payload.collection, len(question))
+
+    session_id = payload.session_id or uuid.uuid4().hex[:16]
+    logger.info("Chat query: session=%s collection=%s question_len=%d", session_id, payload.collection, len(question))
 
     try:
         lang = detect(question)
@@ -308,7 +375,10 @@ def chat(payload: ChatRequest, db: Session = Depends(get_db)):
         msg = (
             "En löytänyt tietoa valitusta kokoelmasta." if language == "fi" else "I couldn't find relevant information in that collection."
         )
-        return ChatResponse(answer=msg, language=language, citations=[])
+        db.add(ChatMessage(session_id=session_id, role="user", content=question, language=language, collection=payload.collection))
+        db.add(ChatMessage(session_id=session_id, role="assistant", content=msg, language=language, collection=payload.collection, citations_json=[]))
+        db.commit()
+        return ChatResponse(answer=msg, language=language, citations=[], session_id=session_id)
 
     context = "\n\n".join([f"[{r['document_name']} p.{r['page']}] {r['content']}" for r in top_rows])
     sys_fi = "Vastaa suomeksi käyttäjän kysymykseen käyttäen vain annettua kontekstia."
@@ -333,4 +403,8 @@ def chat(payload: ChatRequest, db: Session = Depends(get_db)):
         for r in top_rows
     ]
 
-    return ChatResponse(answer=result.content, language=language, citations=citations)
+    db.add(ChatMessage(session_id=session_id, role="user", content=question, language=language, collection=payload.collection))
+    db.add(ChatMessage(session_id=session_id, role="assistant", content=result.content, language=language, collection=payload.collection, citations_json=citations))
+    db.commit()
+
+    return ChatResponse(answer=result.content, language=language, citations=citations, session_id=session_id)
