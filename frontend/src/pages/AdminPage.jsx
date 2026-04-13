@@ -80,6 +80,7 @@ export default function AdminPage() {
             type="file"
             accept=".pdf,.docx,.txt,.csv,.md"
             className="text-sm w-full"
+            aria-label="Upload document file"
             onChange={handleFileChange}
           />
 
@@ -117,6 +118,7 @@ export default function AdminPage() {
               type="text"
               className="border border-slate-300 rounded-lg px-3 py-1.5 text-sm w-full mb-2"
               placeholder="New collection name"
+              aria-label="New collection name"
               value={newCollName}
               onChange={(e) => setNewCollName(e.target.value)}
             />
@@ -124,6 +126,7 @@ export default function AdminPage() {
               type="text"
               className="border border-slate-300 rounded-lg px-3 py-1.5 text-sm w-full mb-2"
               placeholder="Description (optional)"
+              aria-label="Collection description"
               value={newCollDesc}
               onChange={(e) => setNewCollDesc(e.target.value)}
             />
