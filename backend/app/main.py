@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from typing import Literal
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
@@ -15,12 +16,15 @@ from .db import DocumentChunk, IngestionJob, SessionLocal, init_db
 from .finnish import finnish_search_text, stem_overlap_ratio
 from .ingestion import chunk_pages, extract_text
 
+logging.basicConfig(level=getattr(logging, settings.log_level.upper(), logging.INFO))
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title="RAG Finland Enterprise MVP")
 
+_origins = [o.strip() for o in settings.cors_origins.split(",") if o.strip()]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -111,6 +115,7 @@ async def upload_document(
     db: Session = Depends(get_db),
 ):
     content = await file.read()
+    logger.info("Upload started: %s -> collection=%s (%d bytes)", file.filename, collection, len(content))
     job = IngestionJob(document_name=file.filename, collection=collection, status="processing")
     db.add(job)
     db.commit()
@@ -140,11 +145,13 @@ async def upload_document(
         job.status = "completed"
         job.chunks_created = len(chunks)
         db.commit()
+        logger.info("Upload completed: %s -> %d chunks", file.filename, len(chunks))
         return {"job_id": job.id, "chunks": len(chunks), "status": "completed"}
     except Exception as exc:
         job.status = "failed"
         job.error = str(exc)
         db.commit()
+        logger.error("Upload failed: %s -> %s", file.filename, exc)
         raise HTTPException(status_code=400, detail=f"Ingestion failed: {exc}") from exc
 
 
@@ -153,6 +160,7 @@ def chat(payload: ChatRequest, db: Session = Depends(get_db)):
     question = payload.question.strip()
     if not question:
         raise HTTPException(status_code=400, detail="Question is required")
+    logger.info("Chat query: collection=%s lang_detect_pending question_len=%d", payload.collection, len(question))
 
     try:
         lang = detect(question)

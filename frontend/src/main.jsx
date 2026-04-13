@@ -1,6 +1,7 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { QueryClient, QueryClientProvider, useMutation, useQuery } from '@tanstack/react-query'
+import DOMPurify from 'dompurify'
 import { marked } from 'marked'
 import './index.css'
 
@@ -95,7 +96,7 @@ function App() {
         {answer && (
           <div className="mt-4">
             <p className="text-xs uppercase text-slate-500">Detected language: {answer.language}</p>
-            <div className="prose max-w-none" dangerouslySetInnerHTML={{ __html: marked.parse(answer.answer || '') }} />
+            <div className="prose max-w-none" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(marked.parse(answer.answer || '')) }} />
 
             <h3 className="font-medium mt-4">Source Citations</h3>
             <ul className="text-sm list-disc pl-5">
