@@ -147,7 +147,7 @@ export default function ChatPage() {
             </div>
           </div>
 
-          <div className="border border-slate-200 rounded-lg mb-4 max-h-96 overflow-auto p-4 bg-slate-50 min-h-[200px]">
+          <div className="border border-slate-200 rounded-lg mb-4 max-h-96 overflow-auto p-4 bg-slate-50 min-h-[200px]" role="log" aria-label="Chat messages" aria-live="polite">
             {messages.length === 0 ? (
               <p className="text-sm text-slate-400 text-center mt-16">
                 {t('chat.emptyChat')}
@@ -189,11 +189,12 @@ export default function ChatPage() {
             )}
           </div>
 
-          <form onSubmit={handleSubmit} className="flex gap-3">
+          <form onSubmit={handleSubmit} className="flex gap-3" aria-label="Chat input">
             <select
               className="border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white"
               value={collection}
               onChange={(e) => setCollection(e.target.value)}
+              aria-label={t('admin.collection')}
             >
               {(collections.data?.collections || ['HR-docs', 'Legal-docs', 'Technical-docs']).map((c) => (
                 <option key={c} value={c}>{c}</option>
@@ -209,6 +210,7 @@ export default function ChatPage() {
             <button
               type="submit"
               disabled={chat.isPending || !question.trim()}
+              aria-label={t('chat.send')}
               className="px-5 py-2 rounded-lg bg-blue-600 text-white font-medium text-sm hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {chat.isPending ? t('chat.thinking') : t('chat.send')}
