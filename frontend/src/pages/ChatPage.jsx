@@ -40,33 +40,38 @@ export default function ChatPage() {
 
     const assistantIdx = { current: -1 }
 
-    await sendChatStream(userMsg, collection, sessionId, {
-      onMetadata: (meta) => {
-        if (meta.session_id && !sessionId) setSessionId(meta.session_id)
-        setMessages((prev) => {
-          assistantIdx.current = prev.length
-          return [...prev, { role: 'assistant', content: '', language: meta.language, citations: meta.citations }]
-        })
-      },
-      onToken: (token) => {
-        setMessages((prev) => {
-          const updated = [...prev]
-          const idx = assistantIdx.current
-          if (idx >= 0 && updated[idx]) {
-            updated[idx] = { ...updated[idx], content: updated[idx].content + token }
-          }
-          return updated
-        })
-      },
-      onDone: () => {
-        setIsStreaming(false)
-        queryClient.invalidateQueries({ queryKey: ['chat-sessions'] })
-      },
-      onError: (err) => {
-        setStreamError(err.message)
-        setIsStreaming(false)
-      },
-    })
+    try {
+      await sendChatStream(userMsg, collection, sessionId, {
+        onMetadata: (meta) => {
+          if (meta.session_id && !sessionId) setSessionId(meta.session_id)
+          setMessages((prev) => {
+            assistantIdx.current = prev.length
+            return [...prev, { role: 'assistant', content: '', language: meta.language, citations: meta.citations }]
+          })
+        },
+        onToken: (token) => {
+          setMessages((prev) => {
+            const updated = [...prev]
+            const idx = assistantIdx.current
+            if (idx >= 0 && updated[idx]) {
+              updated[idx] = { ...updated[idx], content: updated[idx].content + token }
+            }
+            return updated
+          })
+        },
+        onDone: () => {
+          setIsStreaming(false)
+          queryClient.invalidateQueries({ queryKey: ['chat-sessions'] })
+        },
+        onError: (err) => {
+          setStreamError(err.message)
+          setIsStreaming(false)
+        },
+      })
+    } finally {
+      // Safety net: ensure streaming state is always cleared
+      setIsStreaming(false)
+    }
   }
 
   const loadSession = useMutation({

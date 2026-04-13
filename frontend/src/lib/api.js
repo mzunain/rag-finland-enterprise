@@ -48,20 +48,36 @@ export async function sendChatStream(question, collection, sessionId, { onMetada
       const { done, value } = await reader.read()
       if (done) break
       buffer += decoder.decode(value, { stream: true })
-      const lines = buffer.split('\n')
-      buffer = lines.pop() || ''
 
-      for (const line of lines) {
-        if (line.startsWith('event: ')) {
-          const event = line.slice(7)
-          const nextLine = lines[lines.indexOf(line) + 1]
-          const data = nextLine?.startsWith('data: ') ? nextLine.slice(6) : ''
+      // SSE format: blocks separated by blank lines, each block has event: and data: lines
+      const blocks = buffer.split(/\r?\n\r?\n/)
+      buffer = blocks.pop() || '' // keep last incomplete block in buffer
 
-          if (event === 'metadata' && onMetadata) onMetadata(JSON.parse(data))
-          else if (event === 'token' && onToken) onToken(data)
-          else if (event === 'done' && onDone) onDone()
+      for (const block of blocks) {
+        if (!block.trim()) continue
+        let event = ''
+        let data = ''
+        for (const raw of block.split(/\r?\n/)) {
+          const line = raw.trim()
+          if (line.startsWith('event:')) event = line.slice(6).trim()
+          else if (line.startsWith('data:')) data = line.slice(5).trimStart()
         }
+        if (event === 'metadata' && onMetadata) onMetadata(JSON.parse(data))
+        else if (event === 'token' && onToken) onToken(data)
+        else if (event === 'done' && onDone) onDone()
       }
+    }
+    // If stream ends without a done event, ensure we clean up
+    if (buffer.trim()) {
+      let event = ''
+      let data = ''
+      for (const raw of buffer.split(/\r?\n/)) {
+        const line = raw.trim()
+        if (line.startsWith('event:')) event = line.slice(6).trim()
+        else if (line.startsWith('data:')) data = line.slice(5).trimStart()
+      }
+      if (event === 'done' && onDone) onDone()
+      else if (event === 'token' && onToken) onToken(data)
     }
   } catch (err) {
     if (onError) onError(err)
