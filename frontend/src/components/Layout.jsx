@@ -49,6 +49,14 @@ export default function Layout() {
               >
                 {t('nav.admin')}
               </NavLink>
+              <NavLink
+                to="/analytics"
+                className={({ isActive }) =>
+                  `px-3 py-1 rounded ${isActive ? 'bg-blue-600 text-white' : 'text-slate-600 hover:bg-slate-100'}`
+                }
+              >
+                {t('nav.analytics')}
+              </NavLink>
             </nav>
             <fieldset className="flex gap-1 border border-slate-200 rounded-lg p-0.5" role="radiogroup" aria-label="Language">
               <button

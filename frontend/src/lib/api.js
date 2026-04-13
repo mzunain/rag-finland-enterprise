@@ -88,6 +88,10 @@ export function getStats() {
   return fetchJSON('/admin/stats')
 }
 
+export function getAnalytics() {
+  return fetchJSON('/admin/analytics')
+}
+
 export function createCollection(name, description = '') {
   return fetchJSON('/admin/collections', {
     method: 'POST',
