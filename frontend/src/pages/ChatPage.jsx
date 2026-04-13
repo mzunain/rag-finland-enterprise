@@ -2,7 +2,7 @@ import React from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import DOMPurify from 'dompurify'
 import { marked } from 'marked'
-import { getCollections, sendChat, getChatSessions, getChatHistory, deleteChatSession } from '../lib/api'
+import { getCollections, sendChatStream, getChatSessions, getChatHistory, deleteChatSession } from '../lib/api'
 import { useLang } from '../lib/LangContext'
 import Citations from '../components/Citations'
 
@@ -26,21 +26,48 @@ export default function ChatPage() {
     refetchInterval: 10000,
   })
 
-  const chat = useMutation({
-    mutationFn: () => sendChat(question, collection, sessionId),
-    onSuccess: (data) => {
-      if (!sessionId && data.session_id) {
-        setSessionId(data.session_id)
-      }
-      setMessages((prev) => [
-        ...prev,
-        { role: 'user', content: question },
-        { role: 'assistant', content: data.answer, language: data.language, citations: data.citations },
-      ])
-      setQuestion('')
-      queryClient.invalidateQueries({ queryKey: ['chat-sessions'] })
-    },
-  })
+  const [isStreaming, setIsStreaming] = React.useState(false)
+  const [streamError, setStreamError] = React.useState(null)
+
+  const handleSend = async () => {
+    if (!question.trim() || isStreaming) return
+    setIsStreaming(true)
+    setStreamError(null)
+
+    const userMsg = question
+    setMessages((prev) => [...prev, { role: 'user', content: userMsg }])
+    setQuestion('')
+
+    const assistantIdx = { current: -1 }
+
+    await sendChatStream(userMsg, collection, sessionId, {
+      onMetadata: (meta) => {
+        if (meta.session_id && !sessionId) setSessionId(meta.session_id)
+        setMessages((prev) => {
+          assistantIdx.current = prev.length
+          return [...prev, { role: 'assistant', content: '', language: meta.language, citations: meta.citations }]
+        })
+      },
+      onToken: (token) => {
+        setMessages((prev) => {
+          const updated = [...prev]
+          const idx = assistantIdx.current
+          if (idx >= 0 && updated[idx]) {
+            updated[idx] = { ...updated[idx], content: updated[idx].content + token }
+          }
+          return updated
+        })
+      },
+      onDone: () => {
+        setIsStreaming(false)
+        queryClient.invalidateQueries({ queryKey: ['chat-sessions'] })
+      },
+      onError: (err) => {
+        setStreamError(err.message)
+        setIsStreaming(false)
+      },
+    })
+  }
 
   const loadSession = useMutation({
     mutationFn: getChatHistory,
@@ -75,8 +102,7 @@ export default function ChatPage() {
 
   const handleSubmit = (e) => {
     e.preventDefault()
-    if (!question.trim()) return
-    chat.mutate()
+    handleSend()
   }
 
   const sessionList = sessions.data?.sessions || []
@@ -209,15 +235,15 @@ export default function ChatPage() {
             />
             <button
               type="submit"
-              disabled={chat.isPending || !question.trim()}
+              disabled={isStreaming || !question.trim()}
               aria-label={t('chat.send')}
               className="px-5 py-2 rounded-lg bg-blue-600 text-white font-medium text-sm hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {chat.isPending ? t('chat.thinking') : t('chat.send')}
+              {isStreaming ? t('chat.thinking') : t('chat.send')}
             </button>
           </form>
-          {chat.isError && (
-            <p className="text-sm text-red-600 mt-2">Error: {chat.error.message}</p>
+          {streamError && (
+            <p className="text-sm text-red-600 mt-2">Error: {streamError}</p>
           )}
         </div>
       </div>

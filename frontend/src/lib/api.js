@@ -29,6 +29,45 @@ export function sendChat(question, collection, sessionId = '') {
   })
 }
 
+export async function sendChatStream(question, collection, sessionId, { onMetadata, onToken, onDone, onError }) {
+  try {
+    const res = await fetch(`${API}/chat/stream`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question, collection, session_id: sessionId }),
+    })
+    if (!res.ok) {
+      const text = await res.text()
+      throw new Error(text || `Request failed: ${res.status}`)
+    }
+    const reader = res.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''
+
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+      const lines = buffer.split('\n')
+      buffer = lines.pop() || ''
+
+      for (const line of lines) {
+        if (line.startsWith('event: ')) {
+          const event = line.slice(7)
+          const nextLine = lines[lines.indexOf(line) + 1]
+          const data = nextLine?.startsWith('data: ') ? nextLine.slice(6) : ''
+
+          if (event === 'metadata' && onMetadata) onMetadata(JSON.parse(data))
+          else if (event === 'token' && onToken) onToken(data)
+          else if (event === 'done' && onDone) onDone()
+        }
+      }
+    }
+  } catch (err) {
+    if (onError) onError(err)
+  }
+}
+
 export function getDocuments(collection) {
   return fetchJSON(`/admin/documents?collection=${encodeURIComponent(collection)}`)
 }

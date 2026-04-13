@@ -4,9 +4,12 @@ import logging
 import uuid
 from typing import Literal
 
-from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
+import json
+
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+from sse_starlette.sse import EventSourceResponse
 from langdetect import detect
 from pydantic import BaseModel
 from sqlalchemy import text
@@ -448,3 +451,92 @@ def chat(payload: ChatRequest, db: Session = Depends(get_db)):
     db.commit()
 
     return ChatResponse(answer=result.content, language=language, citations=citations, session_id=session_id)
+
+
+def _retrieve_context(question: str, collection: str, language: str, db: Session):
+    """Shared retrieval logic for both sync and streaming chat."""
+    top_rows = []
+    try:
+        embeddings = OpenAIEmbeddings(model=settings.embedding_model, api_key=settings.openai_api_key)
+        q_emb = embeddings.embed_query(question)
+        sql = text(
+            """
+            SELECT id, document_name, page, content, search_text,
+                   1 - (embedding <=> :query_vector) AS vector_score
+            FROM document_chunks
+            WHERE collection = :collection
+            ORDER BY embedding <=> :query_vector
+            LIMIT 12
+            """
+        )
+        rows = db.execute(sql, {"query_vector": q_emb, "collection": collection}).mappings().all()
+        ranked = []
+        for r in rows:
+            lexical_boost = 0.0
+            if language == "fi":
+                lexical_boost = 0.20 * stem_overlap_ratio(question, r["search_text"] or "")
+            ranked.append({**r, "score": float(r["vector_score"]) + lexical_boost})
+        ranked.sort(key=lambda x: x["score"], reverse=True)
+        top_rows = ranked[:5]
+    except Exception:
+        if language == "fi":
+            top_rows = _lexical_fallback_rows(db, collection, question)
+    return top_rows
+
+
+@app.post("/chat/stream")
+async def chat_stream(request: Request, payload: ChatRequest, db: Session = Depends(get_db)):
+    question = payload.question.strip()
+    if not question:
+        raise HTTPException(status_code=400, detail="Question is required")
+
+    session_id = payload.session_id or uuid.uuid4().hex[:16]
+    logger.info("Stream chat: session=%s collection=%s", session_id, payload.collection)
+
+    try:
+        lang = detect(question)
+    except Exception:
+        lang = "en"
+    language: Literal["fi", "en"] = "fi" if lang == "fi" else "en"
+
+    top_rows = _retrieve_context(question, payload.collection, language, db)
+
+    citations = [
+        {"document": r["document_name"], "page": r["page"], "relevance": round(float(r["score"]), 4), "chunk_id": r["id"]}
+        for r in top_rows
+    ]
+
+    if not top_rows:
+        msg = "En löytänyt tietoa valitusta kokoelmasta." if language == "fi" else "I couldn't find relevant information in that collection."
+        db.add(ChatMessage(session_id=session_id, role="user", content=question, language=language, collection=payload.collection))
+        db.add(ChatMessage(session_id=session_id, role="assistant", content=msg, language=language, collection=payload.collection, citations_json=[]))
+        db.commit()
+
+        async def no_results_gen():
+            yield {"event": "metadata", "data": json.dumps({"session_id": session_id, "language": language, "citations": []})}
+            yield {"event": "token", "data": msg}
+            yield {"event": "done", "data": ""}
+
+        return EventSourceResponse(no_results_gen())
+
+    context = "\n\n".join([f"[{r['document_name']} p.{r['page']}] {r['content']}" for r in top_rows])
+    sys_msg = "Vastaa suomeksi käyttäjän kysymykseen käyttäen vain annettua kontekstia." if language == "fi" else "Answer in English using only the provided context."
+    prompt = f"System: {sys_msg}\nQuestion: {question}\nContext:\n{context}\nInclude concise answer and mention if policy details are missing."
+
+    async def stream_gen():
+        yield {"event": "metadata", "data": json.dumps({"session_id": session_id, "language": language, "citations": citations})}
+        full_text = ""
+        llm = ChatOpenAI(model=settings.model_name, api_key=settings.openai_api_key, temperature=0, streaming=True)
+        async for chunk in llm.astream(prompt):
+            if await request.is_disconnected():
+                break
+            token = chunk.content
+            if token:
+                full_text += token
+                yield {"event": "token", "data": token}
+        db.add(ChatMessage(session_id=session_id, role="user", content=question, language=language, collection=payload.collection))
+        db.add(ChatMessage(session_id=session_id, role="assistant", content=full_text, language=language, collection=payload.collection, citations_json=citations))
+        db.commit()
+        yield {"event": "done", "data": ""}
+
+    return EventSourceResponse(stream_gen())
