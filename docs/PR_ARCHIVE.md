@@ -73,3 +73,9 @@ This file tracks self-reviewed PRs merged with squash strategy for portfolio vis
 - **Type:** Squash merge
 - **Summary:** Analytics endpoint with session/query counts, language breakdown, collection usage, recent queries. Frontend with stat cards and CSS bar charts.
 - **Review Notes:** Zero external charting dependencies. Auto-refreshes every 15s.
+
+## PR-0013 (GH #13)
+- **Title:** feat(i18n): trilingual Swedish language support
+- **Type:** Squash merge
+- **Summary:** Complete Swedish (sv) translations (~50 keys), backend language detection for Swedish queries, dedicated Swedish system prompts, EN/FI/SV header toggle, pgvector query parameter fix.
+- **Review Notes:** Swedish detected correctly via langdetect. Answers in Swedish with citations. All 48 tests pass.

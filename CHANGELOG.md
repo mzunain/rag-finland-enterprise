@@ -5,6 +5,7 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- **Swedish language support** — trilingual UI (EN/FI/SV) with ~50 Swedish translation keys, backend Swedish detection and prompts (PR #13)
 - **Analytics dashboard** with usage stats, language breakdown, collection usage, and recent queries (PR #11)
 - **SSE streaming** for real-time token-by-token chat responses (PR #10)
 - **Accessibility** with ARIA labels, skip navigation, focus-visible styles, and screen reader support (PR #9)
