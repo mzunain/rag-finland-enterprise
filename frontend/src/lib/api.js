@@ -28,3 +28,23 @@ export function sendChat(question, collection) {
     body: JSON.stringify({ question, collection }),
   })
 }
+
+export function getDocuments(collection) {
+  return fetchJSON(`/admin/documents?collection=${encodeURIComponent(collection)}`)
+}
+
+export function deleteDocument(documentName, collection) {
+  return fetchJSON(`/admin/documents/${encodeURIComponent(documentName)}?collection=${encodeURIComponent(collection)}`, {
+    method: 'DELETE',
+  })
+}
+
+export function getDocumentChunks(documentName, collection, page = 1) {
+  return fetchJSON(
+    `/admin/documents/${encodeURIComponent(documentName)}/chunks?collection=${encodeURIComponent(collection)}&page=${page}`
+  )
+}
+
+export function getStats() {
+  return fetchJSON('/admin/stats')
+}

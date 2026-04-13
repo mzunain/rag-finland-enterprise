@@ -18,6 +18,14 @@ export default function Layout() {
               Chat
             </NavLink>
             <NavLink
+              to="/documents"
+              className={({ isActive }) =>
+                `px-3 py-1 rounded ${isActive ? 'bg-blue-600 text-white' : 'text-slate-600 hover:bg-slate-100'}`
+              }
+            >
+              Documents
+            </NavLink>
+            <NavLink
               to="/admin"
               className={({ isActive }) =>
                 `px-3 py-1 rounded ${isActive ? 'bg-blue-600 text-white' : 'text-slate-600 hover:bg-slate-100'}`
