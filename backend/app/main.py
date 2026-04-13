@@ -236,6 +236,58 @@ def admin_stats(db: Session = Depends(get_db)):
     }
 
 
+@app.get("/admin/analytics")
+def analytics(db: Session = Depends(get_db)):
+    total_messages = db.query(sa_func.count(ChatMessage.id)).scalar()
+    total_sessions = db.query(sa_func.count(sa_func.distinct(ChatMessage.session_id))).scalar()
+    user_messages = db.query(sa_func.count(ChatMessage.id)).filter(ChatMessage.role == "user").scalar()
+
+    lang_breakdown = (
+        db.query(ChatMessage.language, sa_func.count(ChatMessage.id).label("count"))
+        .filter(ChatMessage.role == "user")
+        .group_by(ChatMessage.language)
+        .all()
+    )
+
+    collection_usage = (
+        db.query(ChatMessage.collection, sa_func.count(ChatMessage.id).label("queries"))
+        .filter(ChatMessage.role == "user")
+        .group_by(ChatMessage.collection)
+        .order_by(sa_func.count(ChatMessage.id).desc())
+        .all()
+    )
+
+    recent_queries = (
+        db.query(ChatMessage.content, ChatMessage.language, ChatMessage.collection, ChatMessage.created_at)
+        .filter(ChatMessage.role == "user")
+        .order_by(ChatMessage.created_at.desc())
+        .limit(20)
+        .all()
+    )
+
+    total_docs = db.query(sa_func.count(sa_func.distinct(DocumentChunk.document_name))).scalar()
+    total_chunks = db.query(sa_func.count(DocumentChunk.id)).scalar()
+
+    return {
+        "total_messages": total_messages,
+        "total_sessions": total_sessions,
+        "user_queries": user_messages,
+        "total_documents": total_docs,
+        "total_chunks": total_chunks,
+        "language_breakdown": [{"language": r.language, "count": r.count} for r in lang_breakdown],
+        "collection_usage": [{"collection": r.collection, "queries": r.queries} for r in collection_usage],
+        "recent_queries": [
+            {
+                "content": r.content[:100],
+                "language": r.language,
+                "collection": r.collection,
+                "created_at": str(r.created_at) if r.created_at else None,
+            }
+            for r in recent_queries
+        ],
+    }
+
+
 @app.get("/chat/sessions")
 def chat_sessions(db: Session = Depends(get_db)):
     subq = (

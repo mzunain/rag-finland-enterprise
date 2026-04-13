@@ -8,6 +8,7 @@ import ErrorBoundary from './components/ErrorBoundary'
 import ChatPage from './pages/ChatPage'
 import AdminPage from './pages/AdminPage'
 import DocumentsPage from './pages/DocumentsPage'
+import AnalyticsPage from './pages/AnalyticsPage'
 import './index.css'
 
 const queryClient = new QueryClient()
@@ -23,6 +24,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
                 <Route index element={<ChatPage />} />
                 <Route path="admin" element={<AdminPage />} />
                 <Route path="documents" element={<DocumentsPage />} />
+              <Route path="analytics" element={<AnalyticsPage />} />
               </Route>
             </Routes>
           </BrowserRouter>

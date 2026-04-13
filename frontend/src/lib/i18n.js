@@ -1,6 +1,6 @@
 const translations = {
   en: {
-    nav: { chat: 'Chat', documents: 'Documents', admin: 'Admin' },
+    nav: { chat: 'Chat', documents: 'Documents', admin: 'Admin', analytics: 'Analytics' },
     header: { title: 'RAG Finland Enterprise' },
     chat: {
       title: 'Bilingual Chat',
@@ -66,7 +66,7 @@ const translations = {
     lang: { fi: 'Suomi', en: 'English' },
   },
   fi: {
-    nav: { chat: 'Keskustelu', documents: 'Dokumentit', admin: 'Hallinta' },
+    nav: { chat: 'Keskustelu', documents: 'Dokumentit', admin: 'Hallinta', analytics: 'Analytiikka' },
     header: { title: 'RAG Finland Enterprise' },
     chat: {
       title: 'Kaksikielinen keskustelu',
