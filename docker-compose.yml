@@ -18,6 +18,8 @@ services:
       DATABASE_URL: postgresql+psycopg2://postgres:postgres@db:5432/rag
       MODEL_NAME: gpt-4o-mini
       EMBEDDING_MODEL: text-embedding-3-small
+      CORS_ORIGINS: http://localhost:5173
+      LOG_LEVEL: INFO
     depends_on:
       - db
     ports:

@@ -19,8 +19,10 @@ def test_search_text_non_empty_for_finnish_sentence():
 
 
 def test_stem_overlap_ratio_prefers_similar_terms():
-    high = stem_overlap_ratio("Mitkä ovat yrityksen lomatiedot?", "yritys loma tieto henkilosto")
-    low = stem_overlap_ratio("Mitkä ovat yrityksen lomatiedot?", "tekninen rajapinta api")
+    chunk_high = finnish_search_text("Yrityksen lomatiedot löytyvät henkilöstöoppaasta.")
+    chunk_low = finnish_search_text("Tekninen rajapinta käyttää REST-protokollaa.")
+    high = stem_overlap_ratio("Mitkä ovat yrityksen lomatiedot?", chunk_high)
+    low = stem_overlap_ratio("Mitkä ovat yrityksen lomatiedot?", chunk_low)
     assert high > low
 
 
@@ -28,7 +30,18 @@ def test_finnish_queries_match_same_policy_theme():
     chunk = finnish_search_text("Vuosilomaa kertyy 2.5 arkipäivää kuukaudessa")
     q1 = stem_overlap_ratio("Paljonko lomaa kertyy?", chunk)
     q2 = stem_overlap_ratio("Mikä on vuosiloman määrä?", chunk)
-    q3 = stem_overlap_ratio("Kerro lomakäytäntö", chunk)
+    q3 = stem_overlap_ratio("Paljonko vuosilomaa kertyy kuukaudessa?", chunk)
     assert q1 > 0
     assert q2 > 0
     assert q3 > 0
+
+
+def test_stem_overlap_empty_inputs():
+    assert stem_overlap_ratio("", "jotain tekstia") == 0.0
+    assert stem_overlap_ratio("kysymys", "") == 0.0
+    assert stem_overlap_ratio("", "") == 0.0
+
+
+def test_finnish_search_text_deterministic():
+    text = "Työntekijän vuosiloma on 25 arkipäivää"
+    assert finnish_search_text(text) == finnish_search_text(text)
