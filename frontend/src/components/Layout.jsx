@@ -2,6 +2,13 @@ import React from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
 import { useLang } from '../lib/LangContext'
 
+const navItems = [
+  { to: '/', end: true, key: 'chat' },
+  { to: '/documents', key: 'documents' },
+  { to: '/admin', key: 'admin' },
+  { to: '/analytics', key: 'analytics' },
+]
+
 export default function Layout() {
   const { t, locale, switchLang } = useLang()
 
@@ -11,60 +18,50 @@ export default function Layout() {
   }, [locale])
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="h-screen flex flex-col bg-slate-50">
       <a
         href="#main-content"
-        className="sr-only focus:not-sr-only focus:absolute focus:z-50 focus:p-3 focus:bg-blue-600 focus:text-white"
+        className="sr-only focus:not-sr-only focus:absolute focus:z-50 focus:p-3 focus:bg-blue-600 focus:text-white focus:rounded-lg focus:m-2"
       >
         Skip to main content
       </a>
-      <header className="bg-white border-b border-slate-200 shadow-sm" role="banner">
-        <div className="max-w-6xl mx-auto px-6 py-3 flex items-center justify-between">
-          <h1 className="text-lg font-bold text-slate-800">{t('header.title')}</h1>
-          <div className="flex items-center gap-4">
-            <nav aria-label="Main navigation" className="flex gap-2 text-sm">
-              <NavLink
-                to="/"
-                end
-                className={({ isActive }) =>
-                  `px-3 py-1 rounded ${isActive ? 'bg-blue-600 text-white' : 'text-slate-600 hover:bg-slate-100'}`
-                }
-                aria-current={({ isActive }) => (isActive ? 'page' : undefined)}
-              >
-                {t('nav.chat')}
-              </NavLink>
-              <NavLink
-                to="/documents"
-                className={({ isActive }) =>
-                  `px-3 py-1 rounded ${isActive ? 'bg-blue-600 text-white' : 'text-slate-600 hover:bg-slate-100'}`
-                }
-              >
-                {t('nav.documents')}
-              </NavLink>
-              <NavLink
-                to="/admin"
-                className={({ isActive }) =>
-                  `px-3 py-1 rounded ${isActive ? 'bg-blue-600 text-white' : 'text-slate-600 hover:bg-slate-100'}`
-                }
-              >
-                {t('nav.admin')}
-              </NavLink>
-              <NavLink
-                to="/analytics"
-                className={({ isActive }) =>
-                  `px-3 py-1 rounded ${isActive ? 'bg-blue-600 text-white' : 'text-slate-600 hover:bg-slate-100'}`
-                }
-              >
-                {t('nav.analytics')}
-              </NavLink>
+
+      <header className="flex-shrink-0 bg-white border-b border-slate-200 z-40" role="banner">
+        <div className="max-w-screen-2xl mx-auto px-4 sm:px-6">
+          <div className="flex items-center justify-between h-14">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center">
+                <span className="text-white font-bold text-xs">RF</span>
+              </div>
+              <span className="text-sm font-bold text-slate-800 hidden sm:block">RAG Finland</span>
+            </div>
+
+            <nav aria-label="Main navigation" className="flex items-center gap-1">
+              {navItems.map((item) => (
+                <NavLink
+                  key={item.key}
+                  to={item.to}
+                  end={item.end}
+                  className={({ isActive }) =>
+                    `px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                      isActive ? 'bg-blue-600 text-white' : 'text-slate-600 hover:bg-slate-100'
+                    }`
+                  }
+                >
+                  {t(`nav.${item.key}`)}
+                </NavLink>
+              ))}
             </nav>
-            <fieldset className="flex gap-1 border border-slate-200 rounded-lg p-0.5" role="radiogroup" aria-label="Language">
+
+            <fieldset className="flex bg-slate-100 rounded-lg p-0.5" role="radiogroup" aria-label="Language">
               {['en', 'fi', 'sv'].map((lang) => (
                 <button
                   key={lang}
                   role="radio"
                   aria-checked={locale === lang}
-                  className={`px-2 py-1 text-xs rounded ${locale === lang ? 'bg-blue-600 text-white' : 'text-slate-500 hover:bg-slate-100'}`}
+                  className={`px-2.5 py-1 text-xs font-semibold rounded-md transition-colors ${
+                    locale === lang ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                  }`}
                   onClick={() => switchLang(lang)}
                 >
                   {lang.toUpperCase()}
@@ -74,7 +71,8 @@ export default function Layout() {
           </div>
         </div>
       </header>
-      <main id="main-content" className="max-w-6xl mx-auto p-6" role="main">
+
+      <main id="main-content" className="flex-1 overflow-hidden" role="main">
         <Outlet />
       </main>
     </div>
