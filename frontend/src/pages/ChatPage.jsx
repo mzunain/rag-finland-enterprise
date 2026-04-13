@@ -193,7 +193,7 @@ export default function ChatPage() {
                         <>
                           {msg.language && (
                             <span className="text-xs text-slate-400 block mb-1">
-                              {msg.language === 'fi' ? 'Suomi' : 'English'}
+                              {msg.language === 'fi' ? 'Suomi' : msg.language === 'sv' ? 'Svenska' : 'English'}
                             </span>
                           )}
                           <div

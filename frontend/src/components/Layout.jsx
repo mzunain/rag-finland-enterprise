@@ -59,22 +59,17 @@ export default function Layout() {
               </NavLink>
             </nav>
             <fieldset className="flex gap-1 border border-slate-200 rounded-lg p-0.5" role="radiogroup" aria-label="Language">
-              <button
-                role="radio"
-                aria-checked={locale === 'en'}
-                className={`px-2 py-1 text-xs rounded ${locale === 'en' ? 'bg-blue-600 text-white' : 'text-slate-500 hover:bg-slate-100'}`}
-                onClick={() => switchLang('en')}
-              >
-                EN
-              </button>
-              <button
-                role="radio"
-                aria-checked={locale === 'fi'}
-                className={`px-2 py-1 text-xs rounded ${locale === 'fi' ? 'bg-blue-600 text-white' : 'text-slate-500 hover:bg-slate-100'}`}
-                onClick={() => switchLang('fi')}
-              >
-                FI
-              </button>
+              {['en', 'fi', 'sv'].map((lang) => (
+                <button
+                  key={lang}
+                  role="radio"
+                  aria-checked={locale === lang}
+                  className={`px-2 py-1 text-xs rounded ${locale === lang ? 'bg-blue-600 text-white' : 'text-slate-500 hover:bg-slate-100'}`}
+                  onClick={() => switchLang(lang)}
+                >
+                  {lang.toUpperCase()}
+                </button>
+              ))}
             </fieldset>
           </div>
         </div>
