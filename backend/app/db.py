@@ -38,6 +38,19 @@ class IngestionJob(Base):
     created_at = Column(DateTime, server_default=func.now())
 
 
+class ChatMessage(Base):
+    __tablename__ = "chat_messages"
+
+    id = Column(Integer, primary_key=True)
+    session_id = Column(String(64), index=True, nullable=False)
+    role = Column(String(10), nullable=False)  # "user" or "assistant"
+    content = Column(Text, nullable=False)
+    language = Column(String(5), default="en")
+    collection = Column(String(100), default="HR-docs")
+    citations_json = Column(JSON, default=[])
+    created_at = Column(DateTime, server_default=func.now())
+
+
 def init_db() -> None:
     with engine.begin() as conn:
         conn.exec_driver_sql("CREATE EXTENSION IF NOT EXISTS vector;")
