@@ -79,3 +79,9 @@ This file tracks self-reviewed PRs merged with squash strategy for portfolio vis
 - **Type:** Squash merge
 - **Summary:** Complete Swedish (sv) translations (~50 keys), backend language detection for Swedish queries, dedicated Swedish system prompts, EN/FI/SV header toggle, pgvector query parameter fix.
 - **Review Notes:** Swedish detected correctly via langdetect. Answers in Swedish with citations. All 48 tests pass.
+
+## PR-0014 (GH #14)
+- **Title:** feat(ui): professional UI overhaul
+- **Type:** Squash merge
+- **Summary:** Complete rewrite of all 7 frontend files. Slack-style chat layout with persistent sidebar and pinned input, drag-to-upload admin, horizontal collection tabs, bar charts with inline labels, collapsible citations with color-coded relevance, compact sticky header, system font stack. Net -35 lines (489 added, 524 removed).
+- **Review Notes:** All 48 tests pass. All 4 pages verified. No emoji icons — clean text-only professional design.
