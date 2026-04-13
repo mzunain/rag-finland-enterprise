@@ -11,13 +11,18 @@ def test_health(client):
     assert resp.json() == {"status": "ok"}
 
 
-def test_collections(client):
+def test_collections(client, mock_db_session):
+    row = MagicMock()
+    row.name = "HR-docs"
+    row.description = ""
+    row.created_at = None
+    mock_db_session.query.return_value.order_by.return_value.all.return_value = [row]
+
     resp = client.get("/admin/collections")
     assert resp.status_code == 200
     data = resp.json()
     assert "HR-docs" in data["collections"]
-    assert "Legal-docs" in data["collections"]
-    assert "Technical-docs" in data["collections"]
+    assert "details" in data
 
 
 def test_jobs_empty(client):

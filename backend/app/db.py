@@ -38,6 +38,15 @@ class IngestionJob(Base):
     created_at = Column(DateTime, server_default=func.now())
 
 
+class Collection(Base):
+    __tablename__ = "collections"
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String(100), unique=True, nullable=False, index=True)
+    description = Column(Text, default="")
+    created_at = Column(DateTime, server_default=func.now())
+
+
 class ChatMessage(Base):
     __tablename__ = "chat_messages"
 
@@ -51,9 +60,24 @@ class ChatMessage(Base):
     created_at = Column(DateTime, server_default=func.now())
 
 
+_DEFAULT_COLLECTIONS = [
+    ("HR-docs", "Human resources policies and procedures"),
+    ("Legal-docs", "Legal documents and compliance"),
+    ("Technical-docs", "Technical documentation and guides"),
+]
+
+
 def init_db() -> None:
     with engine.begin() as conn:
         conn.exec_driver_sql("CREATE EXTENSION IF NOT EXISTS vector;")
     Base.metadata.create_all(bind=engine)
     with engine.begin() as conn:
         conn.exec_driver_sql("ALTER TABLE document_chunks ADD COLUMN IF NOT EXISTS search_text TEXT DEFAULT '';")
+    session = SessionLocal()
+    try:
+        for name, desc in _DEFAULT_COLLECTIONS:
+            if not session.query(Collection).filter(Collection.name == name).first():
+                session.add(Collection(name=name, description=desc))
+        session.commit()
+    finally:
+        session.close()

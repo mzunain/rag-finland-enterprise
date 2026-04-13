@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 from .config import settings
 from sqlalchemy import func as sa_func
 
-from .db import ChatMessage, DocumentChunk, IngestionJob, SessionLocal, init_db
+from .db import ChatMessage, Collection, DocumentChunk, IngestionJob, SessionLocal, init_db
 from .finnish import finnish_search_text, stem_overlap_ratio
 from .ingestion import chunk_pages, extract_text
 
@@ -65,9 +65,49 @@ def health():
     return {"status": "ok"}
 
 
+class CollectionCreate(BaseModel):
+    name: str
+    description: str = ""
+
+
 @app.get("/admin/collections")
-def collections():
-    return {"collections": ["HR-docs", "Legal-docs", "Technical-docs"]}
+def collections(db: Session = Depends(get_db)):
+    rows = db.query(Collection).order_by(Collection.name).all()
+    return {
+        "collections": [r.name for r in rows],
+        "details": [
+            {"name": r.name, "description": r.description, "created_at": str(r.created_at) if r.created_at else None}
+            for r in rows
+        ],
+    }
+
+
+@app.post("/admin/collections")
+def create_collection(payload: CollectionCreate, db: Session = Depends(get_db)):
+    name = payload.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Collection name is required")
+    existing = db.query(Collection).filter(Collection.name == name).first()
+    if existing:
+        raise HTTPException(status_code=409, detail=f"Collection '{name}' already exists")
+    coll = Collection(name=name, description=payload.description)
+    db.add(coll)
+    db.commit()
+    logger.info("Collection created: %s", name)
+    return {"name": name, "description": payload.description}
+
+
+@app.delete("/admin/collections/{name}")
+def delete_collection(name: str, db: Session = Depends(get_db)):
+    coll = db.query(Collection).filter(Collection.name == name).first()
+    if not coll:
+        raise HTTPException(status_code=404, detail=f"Collection '{name}' not found")
+    chunk_count = db.query(DocumentChunk).filter(DocumentChunk.collection == name).delete()
+    db.query(IngestionJob).filter(IngestionJob.collection == name).delete()
+    db.delete(coll)
+    db.commit()
+    logger.info("Collection deleted: %s (%d chunks removed)", name, chunk_count)
+    return {"deleted": name, "chunks_removed": chunk_count}
 
 
 @app.get("/admin/jobs")

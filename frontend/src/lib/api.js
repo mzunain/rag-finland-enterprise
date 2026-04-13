@@ -49,6 +49,18 @@ export function getStats() {
   return fetchJSON('/admin/stats')
 }
 
+export function createCollection(name, description = '') {
+  return fetchJSON('/admin/collections', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, description }),
+  })
+}
+
+export function deleteCollection(name) {
+  return fetchJSON(`/admin/collections/${encodeURIComponent(name)}`, { method: 'DELETE' })
+}
+
 export function getChatSessions() {
   return fetchJSON('/chat/sessions')
 }
