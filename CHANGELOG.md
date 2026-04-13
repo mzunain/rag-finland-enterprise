@@ -5,6 +5,7 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- **UI overhaul** — professional enterprise design: Slack-style chat, drag-upload admin, collection tabs, collapsible citations (PR #14)
 - **Swedish language support** — trilingual UI (EN/FI/SV) with ~50 Swedish translation keys, backend Swedish detection and prompts (PR #13)
 - **Analytics dashboard** with usage stats, language breakdown, collection usage, and recent queries (PR #11)
 - **SSE streaming** for real-time token-by-token chat responses (PR #10)
