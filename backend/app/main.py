@@ -12,6 +12,8 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from .config import settings
+from sqlalchemy import func as sa_func
+
 from .db import DocumentChunk, IngestionJob, SessionLocal, init_db
 from .finnish import finnish_search_text, stem_overlap_ratio
 from .ingestion import chunk_pages, extract_text
@@ -83,6 +85,109 @@ def jobs(db: Session = Depends(get_db)):
     }
 
 
+
+
+@app.get("/admin/documents")
+def list_documents(collection: str = "HR-docs", db: Session = Depends(get_db)):
+    rows = (
+        db.query(
+            DocumentChunk.document_name,
+            sa_func.count(DocumentChunk.id).label("chunk_count"),
+            sa_func.max(DocumentChunk.page).label("max_page"),
+            sa_func.min(DocumentChunk.created_at).label("created_at"),
+        )
+        .filter(DocumentChunk.collection == collection)
+        .group_by(DocumentChunk.document_name)
+        .order_by(sa_func.min(DocumentChunk.created_at).desc())
+        .all()
+    )
+    return {
+        "documents": [
+            {
+                "document_name": r.document_name,
+                "chunk_count": r.chunk_count,
+                "pages": r.max_page,
+                "created_at": str(r.created_at) if r.created_at else None,
+            }
+            for r in rows
+        ]
+    }
+
+
+@app.delete("/admin/documents/{document_name}")
+def delete_document(document_name: str, collection: str = "HR-docs", db: Session = Depends(get_db)):
+    count = (
+        db.query(DocumentChunk)
+        .filter(DocumentChunk.collection == collection, DocumentChunk.document_name == document_name)
+        .delete()
+    )
+    db.query(IngestionJob).filter(
+        IngestionJob.collection == collection, IngestionJob.document_name == document_name
+    ).delete()
+    db.commit()
+    logger.info("Deleted document: %s from %s (%d chunks)", document_name, collection, count)
+    return {"deleted": document_name, "chunks_removed": count}
+
+
+@app.get("/admin/documents/{document_name}/chunks")
+def document_chunks(
+    document_name: str, collection: str = "HR-docs", page: int = 1, db: Session = Depends(get_db)
+):
+    per_page = 20
+    offset = (page - 1) * per_page
+    total = (
+        db.query(sa_func.count(DocumentChunk.id))
+        .filter(DocumentChunk.collection == collection, DocumentChunk.document_name == document_name)
+        .scalar()
+    )
+    rows = (
+        db.query(DocumentChunk)
+        .filter(DocumentChunk.collection == collection, DocumentChunk.document_name == document_name)
+        .order_by(DocumentChunk.page, DocumentChunk.chunk_index)
+        .offset(offset)
+        .limit(per_page)
+        .all()
+    )
+    return {
+        "document_name": document_name,
+        "collection": collection,
+        "total_chunks": total,
+        "page": page,
+        "per_page": per_page,
+        "chunks": [
+            {
+                "id": r.id,
+                "page": r.page,
+                "chunk_index": r.chunk_index,
+                "content": r.content[:300],
+                "content_length": len(r.content),
+            }
+            for r in rows
+        ],
+    }
+
+
+@app.get("/admin/stats")
+def admin_stats(db: Session = Depends(get_db)):
+    total_docs = db.query(sa_func.count(sa_func.distinct(DocumentChunk.document_name))).scalar()
+    total_chunks = db.query(sa_func.count(DocumentChunk.id)).scalar()
+    collection_stats = (
+        db.query(
+            DocumentChunk.collection,
+            sa_func.count(sa_func.distinct(DocumentChunk.document_name)).label("documents"),
+            sa_func.count(DocumentChunk.id).label("chunks"),
+        )
+        .group_by(DocumentChunk.collection)
+        .all()
+    )
+    return {
+        "total_documents": total_docs,
+        "total_chunks": total_chunks,
+        "collections": [
+            {"name": r.collection, "documents": r.documents, "chunks": r.chunks}
+            for r in collection_stats
+        ],
+    }
 
 
 def _lexical_fallback_rows(db: Session, collection: str, question: str):
