@@ -1,4 +1,10 @@
-from app.finnish import finnish_search_text, finnish_stems, normalize_finnish_chars, stem_overlap_ratio
+from app.finnish import (
+    decompose_finnish_compound,
+    finnish_search_text,
+    finnish_stems,
+    normalize_finnish_chars,
+    stem_overlap_ratio,
+)
 
 
 def test_finnish_stems_produces_tokens():
@@ -45,3 +51,15 @@ def test_stem_overlap_empty_inputs():
 def test_finnish_search_text_deterministic():
     text = "Työntekijän vuosiloma on 25 arkipäivää"
     assert finnish_search_text(text) == finnish_search_text(text)
+
+
+def test_decompose_finnish_compound_splits_policy_term():
+    parts = decompose_finnish_compound("tietoturvakaytanto")
+    assert len(parts) == 2
+    assert parts[0].startswith("tieto")
+
+
+def test_compound_decomposition_improves_overlap():
+    chunk = finnish_search_text("Tietoturvakäytäntö määrittelee salasanavaatimukset.")
+    score = stem_overlap_ratio("Mikä on tieto turva käytäntö?", chunk)
+    assert score > 0

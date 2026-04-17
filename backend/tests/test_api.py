@@ -8,7 +8,32 @@ import pytest
 def test_health(client):
     resp = client.get("/health")
     assert resp.status_code == 200
-    assert resp.json() == {"status": "ok"}
+    data = resp.json()
+    assert data["status"] == "ok"
+    assert data["service"] == "rag-finland-backend"
+    assert resp.headers.get("x-request-id")
+
+
+def test_deep_health_without_openai_key(client, mock_db_session, monkeypatch):
+    monkeypatch.setattr("app.main.settings.openai_api_key", "")
+    resp = client.get("/health/deep")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["status"] == "ok"
+    assert data["checks"]["database"]["status"] == "ok"
+    assert data["checks"]["openai"]["status"] == "skipped"
+
+
+def test_deep_health_db_failure(client, mock_db_session, monkeypatch):
+    from sqlalchemy.exc import SQLAlchemyError
+
+    monkeypatch.setattr("app.main.settings.openai_api_key", "")
+    mock_db_session.execute.side_effect = SQLAlchemyError("db unavailable")
+    resp = client.get("/health/deep")
+    assert resp.status_code == 503
+    data = resp.json()
+    assert data["status"] == "degraded"
+    assert data["checks"]["database"]["status"] == "error"
 
 
 def test_collections(client, mock_db_session):
@@ -123,7 +148,7 @@ def test_chat_finnish_detected(mock_embeddings_cls, mock_llm_cls, client, mock_d
 
 @patch("app.main.OpenAIEmbeddings")
 def test_chat_embedding_failure_finnish_fallback(mock_embeddings_cls, client, mock_db_session):
-    mock_embeddings_cls.return_value.embed_query.side_effect = Exception("API error")
+    mock_embeddings_cls.return_value.embed_query.side_effect = RuntimeError("API error")
     mock_db_session.query.return_value.filter.return_value.limit.return_value.all.return_value = []
 
     resp = client.post("/chat", json={"question": "Mitkä ovat yrityksen lomatiedot?", "collection": "HR-docs"})
