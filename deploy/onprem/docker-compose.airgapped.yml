@@ -1,0 +1,55 @@
+version: '3.9'
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: rag
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  model-gateway:
+    image: ollama/ollama:0.6.6
+    restart: unless-stopped
+    volumes:
+      - ollama-models:/root/.ollama
+    ports:
+      - '11434:11434'
+
+  backend:
+    image: rag-finland-backend:latest
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql+psycopg2://postgres:postgres@db:5432/rag
+      AUTH_REQUIRED: 'true'
+      LLM_PROVIDER: local
+      EMBEDDING_PROVIDER: local
+      DATA_SOVEREIGNTY_MODE: 'true'
+      LOCAL_LLM_BASE_URL: http://model-gateway:11434/v1
+      LOCAL_EMBEDDING_BASE_URL: http://model-gateway:11434/v1
+      LOCAL_LLM_MODEL_FI: poro-34b-chat
+      LOCAL_LLM_MODEL_DEFAULT: llama3.1:8b-instruct-q4_K_M
+      LOCAL_EMBEDDING_MODEL: nomic-embed-text
+      OPENAI_API_KEY: ''
+      CORS_ORIGINS: http://localhost:5173
+    depends_on:
+      - db
+      - model-gateway
+    ports:
+      - '8000:8000'
+
+  frontend:
+    image: rag-finland-frontend:latest
+    restart: unless-stopped
+    environment:
+      VITE_API_URL: http://localhost:8000/v1
+    depends_on:
+      - backend
+    ports:
+      - '5173:5173'
+
+volumes:
+  pgdata:
+  ollama-models:
