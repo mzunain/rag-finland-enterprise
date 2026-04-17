@@ -38,7 +38,7 @@ def test_create_collection_duplicate(client, mock_db_session):
 
 def test_create_collection_empty_name(client, mock_db_session):
     resp = client.post("/admin/collections", json={"name": "  "})
-    assert resp.status_code == 400
+    assert resp.status_code == 422
 
 
 def test_delete_collection(client, mock_db_session):

@@ -5,8 +5,10 @@ from pathlib import Path
 from typing import List, Tuple
 
 from docx import Document as DocxDocument
+from docx.opc.exceptions import PackageNotFoundError
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from PyPDF2 import PdfReader
+from PyPDF2.errors import PdfReadError
 
 
 def extract_text(filename: str, payload: bytes) -> List[Tuple[int, str]]:
@@ -25,7 +27,7 @@ def _extract_pdf(payload: bytes) -> List[Tuple[int, str]]:
     pages: List[Tuple[int, str]] = []
     try:
         reader = PdfReader(BytesIO(payload))
-    except Exception as exc:
+    except (PdfReadError, ValueError, OSError) as exc:
         raise ValueError("Could not parse PDF file") from exc
 
     for idx, page in enumerate(reader.pages, start=1):
@@ -36,7 +38,7 @@ def _extract_pdf(payload: bytes) -> List[Tuple[int, str]]:
 def _extract_docx(payload: bytes) -> List[Tuple[int, str]]:
     try:
         doc = DocxDocument(BytesIO(payload))
-    except Exception as exc:
+    except (PackageNotFoundError, ValueError, OSError) as exc:
         raise ValueError("Could not parse DOCX file") from exc
     text = "\n".join(p.text for p in doc.paragraphs)
     return [(1, text)]

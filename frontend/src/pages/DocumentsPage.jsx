@@ -2,12 +2,14 @@ import React from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { getDocuments, deleteDocument, getDocumentChunks, getStats, getCollections } from '../lib/api'
 import { useLang } from '../lib/LangContext'
+import ConfirmDialog from '../components/ConfirmDialog'
 
 export default function DocumentsPage() {
   const { t } = useLang()
   const [collection, setCollection] = React.useState('HR-docs')
   const [selectedDoc, setSelectedDoc] = React.useState(null)
   const [chunkPage, setChunkPage] = React.useState(1)
+  const [pendingDocDelete, setPendingDocDelete] = React.useState(null)
   const queryClient = useQueryClient()
 
   const colls = useQuery({ queryKey: ['collections'], queryFn: getCollections })
@@ -91,7 +93,7 @@ export default function DocumentsPage() {
                       className="text-xs text-red-500 hover:text-red-700 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
                       onClick={(e) => {
                         e.stopPropagation()
-                        if (confirm(`Delete "${d.document_name}"?`)) deleteMut.mutate(d.document_name)
+                        setPendingDocDelete(d.document_name)
                       }}
                     >
                       {t('docs.delete')}
@@ -152,6 +154,20 @@ export default function DocumentsPage() {
           )}
         </div>
       </div>
+      <ConfirmDialog
+        open={!!pendingDocDelete}
+        title={t('docs.delete')}
+        message={pendingDocDelete ? `Delete "${pendingDocDelete}"?` : ''}
+        confirmLabel={t('docs.delete')}
+        cancelLabel="Cancel"
+        onCancel={() => setPendingDocDelete(null)}
+        onConfirm={() => {
+          if (pendingDocDelete) {
+            deleteMut.mutate(pendingDocDelete)
+            setPendingDocDelete(null)
+          }
+        }}
+      />
     </div>
   )
 }

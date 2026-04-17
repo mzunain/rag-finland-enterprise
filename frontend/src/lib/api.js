@@ -1,12 +1,53 @@
-const API = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+const rawApi = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+const API = rawApi.replace(/\/$/, '')
+const API_BASE = API.endsWith('/v1') ? API : `${API}/v1`
+const TOKEN_KEY = 'rf_access_token'
+
+function getStoredToken() {
+  try {
+    return localStorage.getItem(TOKEN_KEY) || import.meta.env.VITE_API_TOKEN || ''
+  } catch {
+    return import.meta.env.VITE_API_TOKEN || ''
+  }
+}
+
+function withAuthHeaders(headers = {}) {
+  const authToken = getStoredToken()
+  if (!authToken || headers.Authorization) return headers
+  return { ...headers, Authorization: `Bearer ${authToken}` }
+}
+
+export function setAccessToken(token) {
+  localStorage.setItem(TOKEN_KEY, token)
+}
+
+export function clearAccessToken() {
+  localStorage.removeItem(TOKEN_KEY)
+}
 
 export async function fetchJSON(path, options = {}) {
-  const res = await fetch(`${API}${path}`, options)
+  const headers = withAuthHeaders(options.headers || {})
+  const res = await fetch(`${API_BASE}${path}`, { ...options, headers })
   if (!res.ok) {
     const text = await res.text()
     throw new Error(text || `Request failed: ${res.status}`)
   }
   return res.json()
+}
+
+export async function login(username, password) {
+  const body = new URLSearchParams({ username, password })
+  const data = await fetchJSON('/auth/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body,
+  })
+  setAccessToken(data.access_token)
+  return data
+}
+
+export function getAuthMe() {
+  return fetchJSON('/auth/me')
 }
 
 export function getCollections() {
@@ -31,9 +72,10 @@ export function sendChat(question, collection, sessionId = '') {
 
 export async function sendChatStream(question, collection, sessionId, { onMetadata, onToken, onDone, onError }) {
   try {
-    const res = await fetch(`${API}/chat/stream`, {
+    const headers = withAuthHeaders({ 'Content-Type': 'application/json' })
+    const res = await fetch(`${API_BASE}/chat/stream`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify({ question, collection, session_id: sessionId }),
     })
     if (!res.ok) {
@@ -130,4 +172,60 @@ export function getChatHistory(sessionId) {
 
 export function deleteChatSession(sessionId) {
   return fetchJSON(`/chat/sessions/${encodeURIComponent(sessionId)}`, { method: 'DELETE' })
+}
+
+export function getUsers() {
+  return fetchJSON('/admin/users')
+}
+
+export function createUser(payload) {
+  return fetchJSON('/admin/users', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+}
+
+export function updateUser(username, payload) {
+  return fetchJSON(`/admin/users/${encodeURIComponent(username)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+}
+
+export function disableUser(username) {
+  return fetchJSON(`/admin/users/${encodeURIComponent(username)}`, { method: 'DELETE' })
+}
+
+export function getApiKeys() {
+  return fetchJSON('/admin/api-keys')
+}
+
+export function createApiKey(payload) {
+  return fetchJSON('/admin/api-keys', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+}
+
+export function revokeApiKey(keyId) {
+  return fetchJSON(`/admin/api-keys/${keyId}`, { method: 'DELETE' })
+}
+
+export function getUsageDashboard() {
+  return fetchJSON('/admin/usage')
+}
+
+export function getAiProviders() {
+  return fetchJSON('/admin/ai/providers')
+}
+
+export function importConnectorSources(payload) {
+  return fetchJSON('/admin/connectors/import', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
 }
