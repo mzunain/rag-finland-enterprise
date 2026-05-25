@@ -57,8 +57,51 @@ def _safe_json_get(data: dict, path: list[str]) -> str:
     return node if isinstance(node, str) else ""
 
 
+def _string_list(value) -> list[str]:
+    if isinstance(value, str):
+        return [value] if value.strip() else []
+    if isinstance(value, list):
+        return [item.strip() for item in value if isinstance(item, str) and item.strip()]
+    return []
+
+
+def _extract_acl_from_json(payload: dict) -> dict:
+    candidates = [
+        payload.get("source_acl"),
+        payload.get("acl"),
+        payload.get("permissions"),
+        payload.get("restrictions"),
+    ]
+    acl_source = next((item for item in candidates if isinstance(item, dict)), {})
+    if not isinstance(acl_source, dict):
+        acl_source = {}
+
+    users = (
+        _string_list(acl_source.get("allowed_users"))
+        or _string_list(acl_source.get("allowedUsers"))
+        or _string_list(acl_source.get("users"))
+    )
+    groups = (
+        _string_list(acl_source.get("allowed_groups"))
+        or _string_list(acl_source.get("allowedGroups"))
+        or _string_list(acl_source.get("groups"))
+    )
+
+    if not users and not groups:
+        return {}
+    return {"allowed_users": sorted(set(users)), "allowed_groups": sorted(set(groups))}
+
+
 def _normalize_document(connector: str, source_url: str, response: httpx.Response) -> ConnectorDocument:
     content_type = (response.headers.get("content-type") or "").lower()
+    transport_metadata = {
+        key: value
+        for key, value in {
+            "http_last_modified": response.headers.get("last-modified"),
+            "http_etag": response.headers.get("etag"),
+        }.items()
+        if value
+    }
 
     if "application/json" in content_type:
         payload = response.json()
@@ -69,30 +112,33 @@ def _normalize_document(connector: str, source_url: str, response: httpx.Respons
             title = _safe_json_get(payload, ["title"]) or "confluence-page"
             html_body = _safe_json_get(payload, ["body", "storage", "value"])
             body = _strip_html(html_body) if html_body else _strip_html(str(payload))
+            acl = _extract_acl_from_json(payload)
             return ConnectorDocument(
                 source_url=source_url,
                 title=sanitize_document_name(title, fallback="confluence-page.txt"),
                 content=body,
-                metadata={"connector": "confluence", "raw_title": title},
+                metadata={"connector": "confluence", "raw_title": title, **transport_metadata, **({"source_acl": acl} if acl else {})},
             )
 
         if connector == "sharepoint":
             title = _safe_json_get(payload, ["name"]) or _safe_json_get(payload, ["title"]) or "sharepoint-document"
             body = _safe_json_get(payload, ["content"]) or _safe_json_get(payload, ["body"]) or _strip_html(str(payload))
+            acl = _extract_acl_from_json(payload)
             return ConnectorDocument(
                 source_url=source_url,
                 title=sanitize_document_name(title, fallback="sharepoint-document.txt"),
                 content=body,
-                metadata={"connector": "sharepoint", "raw_title": title},
+                metadata={"connector": "sharepoint", "raw_title": title, **transport_metadata, **({"source_acl": acl} if acl else {})},
             )
 
         title = _safe_json_get(payload, ["title"]) or "connector-json"
         body = _safe_json_get(payload, ["content"]) or _safe_json_get(payload, ["body"]) or _strip_html(str(payload))
+        acl = _extract_acl_from_json(payload)
         return ConnectorDocument(
             source_url=source_url,
             title=sanitize_document_name(title, fallback="connector-json.txt"),
             content=body,
-            metadata={"connector": connector, "raw_title": title},
+            metadata={"connector": connector, "raw_title": title, **transport_metadata, **({"source_acl": acl} if acl else {})},
         )
 
     raw_text = response.text
@@ -107,7 +153,7 @@ def _normalize_document(connector: str, source_url: str, response: httpx.Respons
         source_url=source_url,
         title=sanitize_document_name(title, fallback=f"{connector}-document.txt"),
         content=content,
-        metadata={"connector": connector, "content_type": content_type},
+        metadata={"connector": connector, "content_type": content_type, **transport_metadata},
     )
 
 
