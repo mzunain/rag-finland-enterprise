@@ -6,6 +6,7 @@ import uuid
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from email.utils import parsedate_to_datetime
+from pathlib import Path as FilePath
 from typing import Annotated, Literal
 from urllib.parse import urlparse
 
@@ -31,7 +32,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from .auth_utils import hash_api_key, hash_password, month_window_start, utc_now
+from .auth_utils import hash_api_key, hash_password, month_window_start, utc_now, verify_password
 from .config import settings
 from .connectors import fetch_connector_document
 from .db import (
@@ -46,6 +47,7 @@ from .db import (
     EvaluationCase,
     EvaluationRun,
     IngestionJob,
+    LaunchSetting,
     SessionLocal,
     UsageEvent,
     UserAccount,
