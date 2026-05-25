@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "description": "Deterministic passing predictions used to validate the retrieval evaluation harness in CI.",
+  "predictions": [
+    {
+      "case_id": "hr-en-annual-leave",
+      "outcome": "grounded",
+      "citations": [
+        { "document": "HR-policy.pdf", "page": 2, "relevance": 0.91 }
+      ]
+    },
+    {
+      "case_id": "hr-fi-annual-leave",
+      "outcome": "grounded",
+      "citations": [
+        { "document": "HR-policy.pdf", "page": 2, "relevance": 0.88 }
+      ]
+    },
+    {
+      "case_id": "legal-sv-dpa",
+      "outcome": "grounded",
+      "citations": [
+        { "document": "DPA-template.pdf", "page": 4, "relevance": 0.84 }
+      ]
+    },
+    {
+      "case_id": "technical-en-restore",
+      "outcome": "grounded",
+      "citations": [
+        { "document": "deployment-runbook.md", "page": 1, "relevance": 0.86 }
+      ]
+    },
+    {
+      "case_id": "hr-en-cafeteria-menu",
+      "outcome": "no_context",
+      "citations": []
+    }
+  ]
+}

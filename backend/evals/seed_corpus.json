@@ -1,0 +1,51 @@
+{
+  "version": 1,
+  "description": "Seeded corpus used by the deterministic retrieval evaluator in CI.",
+  "chunks": [
+    {
+      "id": "hr-policy-p2-leave",
+      "chunk_id": "hr-policy-p2-leave",
+      "collection": "HR-docs",
+      "document": "HR-policy.pdf",
+      "page": 2,
+      "title": "Annual leave allowance",
+      "content": "Employees receive 25 annual leave days each calendar year. In Finnish: tyontekijoilla on 25 vuosilomapaivaa vuodessa. Leave requests are approved by the manager before the planned absence."
+    },
+    {
+      "id": "hr-policy-p5-payroll",
+      "chunk_id": "hr-policy-p5-payroll",
+      "collection": "HR-docs",
+      "document": "HR-policy.pdf",
+      "page": 5,
+      "title": "Payroll and onboarding",
+      "content": "Payroll is processed monthly. New employees complete onboarding, equipment collection, and mandatory security training during the first week."
+    },
+    {
+      "id": "dpa-template-p4-processors",
+      "chunk_id": "dpa-template-p4-processors",
+      "collection": "Legal-docs",
+      "document": "DPA-template.pdf",
+      "page": 4,
+      "title": "Processor requirements",
+      "content": "The krav galler for personuppgiftsbitraden include documented instructions, confidentiality commitments, audit assistance, subprocessors approved in writing, and deletion or return of personal data at termination."
+    },
+    {
+      "id": "deployment-runbook-p1-restore",
+      "chunk_id": "deployment-runbook-p1-restore",
+      "collection": "Technical-docs",
+      "document": "deployment-runbook.md",
+      "page": 1,
+      "title": "Restore procedure after failed deployment",
+      "content": "The restore procedure after a failed deployment is to stop traffic to the failed release, roll back the application image, restore the database from the latest verified backup if migration rollback is required, run health checks, and reopen traffic."
+    },
+    {
+      "id": "deployment-runbook-p3-observability",
+      "chunk_id": "deployment-runbook-p3-observability",
+      "collection": "Technical-docs",
+      "document": "deployment-runbook.md",
+      "page": 3,
+      "title": "Deployment observability",
+      "content": "Release owners review latency, error rate, queue depth, and audit log ingestion for thirty minutes after deployment."
+    }
+  ]
+}
