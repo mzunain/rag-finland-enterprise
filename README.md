@@ -1,89 +1,158 @@
-# RAG Finland Enterprise MVP
+# RAG Finland Enterprise
 
-![GitHub Workflow Status](https://img.shields.io/badge/CI-passing-brightgreen)
-![Code Style](https://img.shields.io/badge/style-black-black)
-![License](https://img.shields.io/badge/license-MIT-blue)
-
-A 48-hour MVP for bilingual Finnish/English enterprise RAG with source citations.
-
-## Stack
-
-- Backend: FastAPI + LangChain + OpenAI/local LLM providers + SQLAlchemy + pgvector
-- Database: PostgreSQL (pgvector extension)
-- Frontend: React + Tailwind + React Query + Marked
-- Orchestration: Docker Compose
-
-## Features Implemented
-
-1. Document ingestion pipeline
-   - Upload PDF / DOCX / TXT / CSV
-   - Text extraction (PyPDF2, python-docx)
-   - Chunking (RecursiveCharacterTextSplitter, ~500-token target via 2000-char chunks)
-   - OpenAI embeddings stored in Postgres + pgvector
-2. Bilingual chat
-   - Language detection for Finnish/English
-   - Finnish stemmer optimization (Snowball stemmer) for lexical reranking
-   - Finnish compound decomposition for better lexical overlap
-   - Responds in same language as user input
-   - Provider routing for OpenAI or local sovereign models (Poro/Viking-ready)
-3. Source citations
-   - Every answer returns document name, page number, chunk id, and relevance score
-4. Admin dashboard
-   - Upload documents
-   - Monitor ingestion jobs
-   - Manage collections: HR-docs, Legal-docs, Technical-docs
-   - Enterprise controls: users, API keys, quotas
-5. Enterprise integrations
-   - Confluence / SharePoint connector import endpoint
-   - On-prem / air-gapped deployment package
-
-## Engineering Workflow
-
-This project follows **GitHub Flow with mandatory PR reviews**:
-
-- Feature branches (`feature/*`, `fix/*`)
-- Conventional commit messages
-- CI checks on push and pull request
-- Squash-merge for linear history
-
-
-## PR & Merge Visibility
-
-To keep history employer-friendly, each feature follows:
-
-1. `feature/*` branch from `main`
-2. PR with What/Why/Testing/Checklist
-3. Self-review notes + follow-up fix commit if needed
-4. Squash merge into `main`
-5. Feature branch deletion
-
-Closed PR summaries are tracked in [`docs/PR_ARCHIVE.md`](docs/PR_ARCHIVE.md).
+Enterprise-ready RAG application for Finnish and English company knowledge bases. It includes document ingestion, pgvector retrieval, source citations, role-based access, audit logging, analytics, and deployment paths for local Docker, EU/on-prem environments, and free demo hosting.
 
 ## Quick Start
 
-1. Copy environment file:
+Prerequisite: Docker Desktop or another Docker Compose-compatible runtime.
+
+```bash
+./run
+```
+
+This is the beginner path. The script creates `.env` if it does not exist, generates a local JWT secret, builds the stack, waits for health checks, and starts:
+
+- Frontend: http://localhost:5173
+- Backend health: http://localhost:8000/v1/health
+- API docs: http://localhost:8000/docs
+
+Default local login:
+
+```text
+username: admin
+password: change-admin-password
+```
+
+Set `OPENAI_API_KEY` in `.env` before using embeddings or chat with the default OpenAI provider. The app can still boot without it for UI, docs, auth, and health checks.
+
+Default local ports are `FRONTEND_PORT=5173`, `BACKEND_PORT=8000`, and `POSTGRES_PORT=55432`. Change them in `.env` if any are already in use.
+
+## Common Commands
+
+```bash
+./run                 # start the full app
+./run status          # show containers and health URLs
+./run logs            # follow Docker logs
+./run logs backend    # follow one service
+./run stop            # stop containers
+./run clean           # stop containers and remove volumes
+./run eval            # run deterministic retrieval eval gate
+./run test            # backend tests, eval gate, type check, frontend build, compose validation when Docker is available
+./run doctor          # check local tools
+```
+
+`make run`, `make test`, `make logs`, and `make clean` are thin wrappers around the same script. Manual Docker command:
 
 ```bash
 cp .env.example .env
-# Set OPENAI_API_KEY
+docker compose up --build -d
 ```
 
-2. Run stack:
+Only `./run` needs Docker for normal app startup. `./run test` also uses local Python and Node.js when available; if Docker Compose is missing, it still runs backend tests, mypy, retrieval evals, and the frontend build, then skips only Compose validation.
+
+## Stack
+
+- Backend: FastAPI, SQLAlchemy, LangChain, OpenAI-compatible LLM providers
+- Database: PostgreSQL with pgvector
+- Frontend: React, Vite, Tailwind, React Query
+- Auth and controls: JWT, API keys, RBAC, OIDC support, quotas, audit logs
+- Operations: Docker Compose, Prometheus metrics, TLS reverse proxy option, air-gapped package option
+
+## Implemented
+
+- Upload and parse PDF, DOCX, TXT, Markdown, and CSV files.
+- Chunk documents, generate embeddings, and store vectors in Postgres/pgvector.
+- Ask questions in Finnish or English and receive answers in the same language.
+- Return citations with document name, page, chunk id, and relevance score.
+- Improve Finnish retrieval with stemming, compound decomposition, and lexical fallback.
+- Manage collections, documents, users, API keys, quotas, usage, and analytics from the UI.
+- Import connector sources through Confluence/SharePoint-style fetch endpoints.
+- Run OpenAI, local OpenAI-compatible models, or sovereignty mode for local providers.
+- Emit request IDs, structured logs, metrics, and audit events.
+
+For a fuller status and competitor comparison, see [docs/PRODUCT_AUDIT.md](docs/PRODUCT_AUDIT.md).
+
+## Testing
+
+One command:
 
 ```bash
-docker-compose up --build
+./run test
 ```
 
-3. Open frontend:
+Backend only:
 
-- http://localhost:5173
+```bash
+python3.12 -m venv .venv
+.venv/bin/pip install -r backend/requirements.txt
+cd backend
+PYTHONPATH=. ../.venv/bin/python -m pytest -q tests --ignore=tests/integration
+PYTHONPATH=. ../.venv/bin/mypy
+```
 
-4. API docs:
+Frontend:
 
-- Versioned docs: http://localhost:8000/docs
-- OpenAPI JSON: http://localhost:8000/openapi.json (server URL set to `/v1`)
+```bash
+cd frontend
+npm ci
+npm run build
+```
 
-5. Authenticate (Phase 1+3):
+PostgreSQL integration tests run in CI against `pgvector/pgvector:pg16`. Locally, set:
+
+```bash
+RUN_INTEGRATION_TESTS=1
+INTEGRATION_DATABASE_URL=postgresql+psycopg2://postgres:postgres@localhost:55432/rag
+```
+
+## CI Pipeline
+
+GitHub Actions runs:
+
+- backend unit tests
+- deterministic retrieval evaluation gate
+- PostgreSQL/pgvector integration smoke test
+- focused mypy checks
+- frontend production build
+- frontend dependency audit
+- Docker image builds
+- Compose and deployment manifest validation
+
+The separate `Retrieval Evaluation` workflow also runs the deterministic retrieval gate every day at 04:17 UTC and can be launched manually from GitHub Actions. This catches citation recall, no-answer, grounded-answer, and multilingual retrieval drift even when no code is being pushed.
+
+The focused mypy target intentionally covers non-ORM modules first. The current SQLAlchemy models use classic declarative mappings, which produce noisy static typing errors until they are migrated to SQLAlchemy `Mapped[...]` models.
+
+## API
+
+Versioned endpoints are served under `/v1`. Legacy unversioned paths remain available for compatibility.
+
+- `GET /v1/health`
+- `GET /v1/health/deep`
+- `GET /v1/metrics`
+- `POST /v1/auth/token`
+- `GET /v1/auth/me`
+- `POST /v1/admin/upload`
+- `GET /v1/admin/jobs`
+- `GET /v1/admin/collections`
+- `GET /v1/admin/documents`
+- `GET /v1/admin/users`
+- `POST /v1/admin/users`
+- `GET /v1/admin/api-keys`
+- `POST /v1/admin/api-keys`
+- `GET /v1/admin/usage`
+- `GET /v1/admin/ai/providers`
+- `GET /v1/admin/reviews`
+- `PATCH /v1/admin/reviews/{review_id}`
+- `POST /v1/admin/reviews/{review_id}/promote-eval`
+- `GET /v1/admin/eval-cases`
+- `GET /v1/admin/eval-cases/export`
+- `POST /v1/admin/eval-runs`
+- `GET /v1/admin/eval-runs`
+- `POST /v1/admin/connectors/import`
+- `POST /v1/chat`
+- `POST /v1/chat/stream`
+
+Example token request:
 
 ```bash
 curl -X POST http://localhost:8000/v1/auth/token \
@@ -91,86 +160,53 @@ curl -X POST http://localhost:8000/v1/auth/token \
   -d "username=admin&password=change-admin-password"
 ```
 
-Use the returned bearer token for all endpoints except `/health`.  
-Versioned endpoints are served under `/v1/*` (legacy unversioned paths remain for compatibility).
+## Free Demo Deployment
 
-6. Run DB migrations (Phase 2):
+Recommended free stack:
+
+- Frontend: Vercel Hobby
+- Backend: Render Free Web Service
+- Database: Neon Free Postgres with pgvector
+
+Use:
+
+- [frontend/vercel.json](frontend/vercel.json) for the Vite SPA
+- [render.yaml](render.yaml) for the backend Docker service
+- [docs/DEPLOYMENT_FREE.md](docs/DEPLOYMENT_FREE.md) for the full walkthrough
+
+Free tiers are good for demos and portfolio review. For real enterprise use, move to paid EU-region infrastructure or the on-prem deployment package.
+
+## Production And Enterprise Runbooks
+
+- [UpCloud EU deployment](docs/UPCLOUD_EU_DEPLOYMENT.md)
+- [Free deployment](docs/DEPLOYMENT_FREE.md)
+- [GDPR compliance](docs/GDPR_COMPLIANCE.md)
+- [DPA template](docs/DPA_TEMPLATE.md)
+- [SOC 2 readiness](docs/SOC2_READINESS.md)
+- [EU AI Act notes](docs/EU_AI_ACT_COMPLIANCE.md)
+- [On-prem and air-gapped deployment](deploy/onprem/README.md)
+
+Optional local modes:
 
 ```bash
-cd backend
-alembic upgrade head
-```
-
-7. Optional TLS reverse proxy (Phase 2):
-
-```bash
+# TLS reverse proxy
 docker compose -f docker-compose.yml -f docker-compose.tls.yml up --build
-```
 
-Place certificates in `nginx/certs/fullchain.pem` and `nginx/certs/privkey.pem` before starting TLS mode.
-
-8. Optional observability stack (Phase 3):
-
-```bash
+# Observability
 docker compose -f docker-compose.yml -f docker-compose.observability.yml up -d
-```
 
-Prometheus scrapes `backend:8000/v1/metrics`; set a valid admin bearer token in `monitoring/prometheus.yml`.
-
-9. Optional on-prem / air-gapped profile (Phase 4):
-
-```bash
+# Air-gapped/on-prem profile
 docker compose -f deploy/onprem/docker-compose.airgapped.yml up -d
 ```
 
-Use `scripts/package_airgapped.sh` to export all required images for offline environments.
+## Engineering Workflow
 
-## Test prompts
+- Use feature branches such as `feature/free-deploy-docs` or `fix/auth-token-handling`.
+- Keep commit messages plain and specific, for example `Add one-command local startup`.
+- Open PRs with What, Why, and Testing notes.
+- Require CI to pass before merge.
+- Prefer squash merge for clean project history.
 
-- Finnish: `Mitkä ovat yrityksen lomatiedot?`
-- English: `What are the company vacation policies?`
+## License
 
-## API Endpoints
-
-- `GET /v1/health`
-- `GET /v1/health/deep` (admin token required)
-- `GET /v1/metrics` (admin token required)
-- `POST /v1/auth/token`
-- `GET /v1/auth/me`
-- `POST /v1/admin/upload` (multipart form: `file`, optional `collection`)
-- `GET /v1/admin/jobs`
-- `GET /v1/admin/collections`
-- `GET /v1/admin/users`
-- `POST /v1/admin/users`
-- `GET /v1/admin/api-keys`
-- `POST /v1/admin/api-keys`
-- `GET /v1/admin/usage`
-- `GET /v1/admin/ai/providers`
-- `POST /v1/admin/connectors/import`
-- `POST /v1/chat` (`{ "question": "...", "collection": "HR-docs" }`)
-
-## Notes
-
-- Provide a valid OpenAI API key in `.env`.
-- Relevance score is computed from pgvector cosine distance + Finnish lexical stem overlap for FI queries.
-- UTF-8 handling is enforced for text file ingestion (`errors="ignore"`) and Finnish normalization is applied for robust morphology matching.
-- If embeddings fail, Finnish queries fall back to lexical stemming-based retrieval so chat remains functional.
-- Every response includes `X-Request-ID` for correlation with structured JSON backend logs.
-- Mutation endpoints write audit log records (`audit_logs` table) with actor, action, resource, and timestamp.
-- Phase 3 docs:
-  - [UpCloud EU deployment runbook](docs/UPCLOUD_EU_DEPLOYMENT.md)
-  - [GDPR compliance pack](docs/GDPR_COMPLIANCE.md)
-  - [DPA template](docs/DPA_TEMPLATE.md)
-  - [k6 load script](load/k6_chat.js)
-- Phase 4 docs:
-  - [On-prem deployment package](deploy/onprem/README.md)
-  - [SOC2 readiness checklist](docs/SOC2_READINESS.md)
-  - [EU AI Act compliance notes](docs/EU_AI_ACT_COMPLIANCE.md)
-
-
-## Branch protection recommendation
-
-- Require PR review before merge
-- Require CI (pytest + mypy) to pass
-- Block force-pushes to `main`
-- Enforce squash merges only
+MIT

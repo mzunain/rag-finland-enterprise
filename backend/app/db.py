@@ -260,6 +260,21 @@ class EvaluationRun(Base):
     completed_at = Column(DateTime, nullable=True)
 
 
+class LaunchSetting(Base):
+    __tablename__ = "launch_settings"
+    __table_args__ = (
+        UniqueConstraint("key", name="uq_launch_settings_key"),
+        Index("ix_launch_settings_key", "key"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    key = Column(String(80), nullable=False, unique=True, index=True)
+    value_json = Column(JSON, default=dict)
+    updated_by = Column(String(64), nullable=False, default="system")
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
 class DocumentSource(Base):
     __tablename__ = "document_sources"
     __table_args__ = (
@@ -391,6 +406,9 @@ def init_db() -> None:
         )
         conn.exec_driver_sql(
             "CREATE INDEX IF NOT EXISTS ix_evaluation_runs_passed_started_at ON evaluation_runs (passed, started_at);"
+        )
+        conn.exec_driver_sql(
+            "CREATE INDEX IF NOT EXISTS ix_launch_settings_key ON launch_settings (key);"
         )
         conn.exec_driver_sql(
             "CREATE INDEX IF NOT EXISTS ix_document_sources_collection_freshness ON document_sources (collection, freshness_status);"
