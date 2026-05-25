@@ -1,7 +1,7 @@
 import logging
 import json
 
-from sqlalchemy import Boolean, Column, DateTime, Index, Integer, JSON, String, Text, UniqueConstraint, create_engine, func
+from sqlalchemy import Boolean, Column, DateTime, Float, Index, Integer, JSON, String, Text, UniqueConstraint, create_engine, func
 from sqlalchemy.orm import declarative_base, sessionmaker
 from pgvector.sqlalchemy import Vector
 
@@ -179,6 +179,113 @@ class UsageEvent(Base):
     created_at = Column(DateTime, server_default=func.now())
 
 
+class AnswerReview(Base):
+    __tablename__ = "answer_reviews"
+    __table_args__ = (
+        Index("ix_answer_reviews_status_created_at", "status", "created_at"),
+        Index("ix_answer_reviews_collection_status", "collection", "status"),
+        Index("ix_answer_reviews_rating_created_at", "rating", "created_at"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    session_id = Column(String(64), index=True, nullable=False, default="")
+    collection = Column(String(100), nullable=False, index=True)
+    question = Column(Text, nullable=False, default="")
+    answer_excerpt = Column(Text, nullable=False, default="")
+    rating = Column(String(24), nullable=False, index=True)
+    reason = Column(Text, nullable=False, default="")
+    language = Column(String(5), nullable=True)
+    citation_count = Column(Integer, nullable=False, default=0)
+    citations_json = Column(JSON, default=list)
+    source_confidence = Column(Float, nullable=True)
+    confidence_label = Column(String(24), nullable=True)
+    answer_quality_json = Column(JSON, default=dict)
+    status = Column(String(24), nullable=False, default="open", index=True)
+    reviewer_note = Column(Text, nullable=False, default="")
+    created_by = Column(String(64), nullable=False, index=True)
+    resolved_by = Column(String(64), nullable=True)
+    promoted_eval_case_id = Column(String(100), nullable=True, index=True)
+    promoted_to_eval_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+    resolved_at = Column(DateTime, nullable=True)
+
+
+class EvaluationCase(Base):
+    __tablename__ = "evaluation_cases"
+    __table_args__ = (
+        UniqueConstraint("case_id", name="uq_evaluation_cases_case_id"),
+        Index("ix_evaluation_cases_collection_status", "collection", "status"),
+        Index("ix_evaluation_cases_review_id", "review_id"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    case_id = Column(String(100), nullable=False, unique=True, index=True)
+    review_id = Column(Integer, nullable=True, index=True)
+    language = Column(String(5), nullable=False, default="en")
+    collection = Column(String(100), nullable=False, index=True)
+    question = Column(Text, nullable=False)
+    expectation = Column(String(24), nullable=False, default="answer")
+    required_citations_json = Column(JSON, default=list)
+    notes_json = Column(JSON, default=dict)
+    status = Column(String(24), nullable=False, default="active", index=True)
+    created_by = Column(String(64), nullable=False)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
+class EvaluationRun(Base):
+    __tablename__ = "evaluation_runs"
+    __table_args__ = (
+        UniqueConstraint("run_id", name="uq_evaluation_runs_run_id"),
+        Index("ix_evaluation_runs_collection_started_at", "collection", "started_at"),
+        Index("ix_evaluation_runs_status_started_at", "status", "started_at"),
+        Index("ix_evaluation_runs_passed_started_at", "passed", "started_at"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    run_id = Column(String(64), nullable=False, unique=True, index=True)
+    collection = Column(String(100), nullable=False, default="", index=True)
+    status = Column(String(24), nullable=False, default="completed", index=True)
+    total_cases = Column(Integer, nullable=False, default=0)
+    passed_cases = Column(Integer, nullable=False, default=0)
+    case_pass_rate = Column(Float, nullable=False, default=0.0)
+    citation_recall = Column(Float, nullable=False, default=0.0)
+    grounded_accuracy = Column(Float, nullable=False, default=0.0)
+    no_answer_accuracy = Column(Float, nullable=False, default=0.0)
+    passed = Column(Boolean, nullable=False, default=False, index=True)
+    report_json = Column(JSON, default=dict)
+    created_by = Column(String(64), nullable=False)
+    started_at = Column(DateTime, server_default=func.now())
+    completed_at = Column(DateTime, nullable=True)
+
+
+class DocumentSource(Base):
+    __tablename__ = "document_sources"
+    __table_args__ = (
+        UniqueConstraint("collection", "document_name", name="uq_document_sources_collection_document"),
+        Index("ix_document_sources_collection_freshness", "collection", "freshness_status"),
+        Index("ix_document_sources_sync_status_next_sync", "sync_status", "next_sync_at"),
+        Index("ix_document_sources_source_url", "source_url"),
+    )
+
+    id = Column(Integer, primary_key=True)
+    collection = Column(String(100), nullable=False, index=True)
+    document_name = Column(String(255), nullable=False, index=True)
+    source_url = Column(Text, nullable=False, default="")
+    connector = Column(String(32), nullable=False, default="upload")
+    sync_status = Column(String(24), nullable=False, default="synced", index=True)
+    freshness_status = Column(String(24), nullable=False, default="fresh", index=True)
+    last_synced_at = Column(DateTime, nullable=True)
+    source_updated_at = Column(DateTime, nullable=True)
+    next_sync_at = Column(DateTime, nullable=True)
+    stale_after_days = Column(Integer, nullable=False, default=settings.source_stale_after_days)
+    sync_interval_hours = Column(Integer, nullable=False, default=settings.source_sync_interval_hours)
+    last_sync_error = Column(Text, nullable=False, default="")
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
 _DEFAULT_COLLECTIONS = [
     ("HR-docs", "Human resources policies and procedures"),
     ("Legal-docs", "Legal documents and compliance"),
@@ -257,6 +364,42 @@ def init_db() -> None:
         )
         conn.exec_driver_sql(
             "CREATE INDEX IF NOT EXISTS ix_chat_messages_collection_created_at ON chat_messages (collection, created_at);"
+        )
+        conn.exec_driver_sql(
+            "CREATE INDEX IF NOT EXISTS ix_answer_reviews_status_created_at ON answer_reviews (status, created_at);"
+        )
+        conn.exec_driver_sql(
+            "CREATE INDEX IF NOT EXISTS ix_answer_reviews_collection_status ON answer_reviews (collection, status);"
+        )
+        conn.exec_driver_sql(
+            "CREATE INDEX IF NOT EXISTS ix_answer_reviews_rating_created_at ON answer_reviews (rating, created_at);"
+        )
+        conn.exec_driver_sql(
+            "CREATE INDEX IF NOT EXISTS ix_answer_reviews_promoted_eval_case_id ON answer_reviews (promoted_eval_case_id);"
+        )
+        conn.exec_driver_sql(
+            "CREATE INDEX IF NOT EXISTS ix_evaluation_cases_collection_status ON evaluation_cases (collection, status);"
+        )
+        conn.exec_driver_sql(
+            "CREATE INDEX IF NOT EXISTS ix_evaluation_cases_review_id ON evaluation_cases (review_id);"
+        )
+        conn.exec_driver_sql(
+            "CREATE INDEX IF NOT EXISTS ix_evaluation_runs_collection_started_at ON evaluation_runs (collection, started_at);"
+        )
+        conn.exec_driver_sql(
+            "CREATE INDEX IF NOT EXISTS ix_evaluation_runs_status_started_at ON evaluation_runs (status, started_at);"
+        )
+        conn.exec_driver_sql(
+            "CREATE INDEX IF NOT EXISTS ix_evaluation_runs_passed_started_at ON evaluation_runs (passed, started_at);"
+        )
+        conn.exec_driver_sql(
+            "CREATE INDEX IF NOT EXISTS ix_document_sources_collection_freshness ON document_sources (collection, freshness_status);"
+        )
+        conn.exec_driver_sql(
+            "CREATE INDEX IF NOT EXISTS ix_document_sources_sync_status_next_sync ON document_sources (sync_status, next_sync_at);"
+        )
+        conn.exec_driver_sql(
+            "CREATE INDEX IF NOT EXISTS ix_document_sources_source_url ON document_sources (source_url);"
         )
         if is_postgres:
             conn.exec_driver_sql(

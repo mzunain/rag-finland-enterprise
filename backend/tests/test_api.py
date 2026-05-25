@@ -98,6 +98,8 @@ def test_chat_no_results_english(mock_embeddings_cls, mock_llm_cls, client, mock
     data = resp.json()
     assert data["language"] == "en"
     assert data["citations"] == []
+    assert data["answer_quality"]["outcome"] == "no_context"
+    assert data["answer_quality"]["grounded"] is False
     assert "couldn't find" in data["answer"].lower() or "information" in data["answer"].lower()
 
 
@@ -129,6 +131,9 @@ def test_chat_with_results(mock_embeddings_cls, mock_llm_cls, client, mock_db_se
     assert len(data["citations"]) == 1
     assert data["citations"][0]["document"] == "policy.pdf"
     assert data["citations"][0]["page"] == 2
+    assert data["answer_quality"]["outcome"] == "grounded"
+    assert data["answer_quality"]["grounded"] is True
+    assert data["answer_quality"]["source_confidence"] == 0.85
     assert "25 days" in data["answer"]
 
 

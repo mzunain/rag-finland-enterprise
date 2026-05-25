@@ -56,6 +56,7 @@ def test_chat_history_returns_messages(client, mock_db_session):
     assert len(data["messages"]) == 2
     assert data["messages"][0]["role"] == "user"
     assert data["messages"][1]["role"] == "assistant"
+    assert data["messages"][1]["answer_quality"]["outcome"] == "no_context"
 
 
 def test_delete_session(client, mock_db_session):
@@ -67,6 +68,42 @@ def test_delete_session(client, mock_db_session):
     data = resp.json()
     assert data["deleted_session"] == "abc123"
     assert data["messages_removed"] == 6
+
+
+def test_chat_feedback_records_usage_and_audit(client, mock_db_session):
+    from app.db import AnswerReview, AuditLog, UsageEvent
+
+    resp = client.post(
+        "/chat/feedback",
+        json={
+            "session_id": "abc123",
+            "collection": "HR-docs",
+            "question": "How many leave days?",
+            "answer_excerpt": "Employees receive 25 annual leave days.",
+            "rating": "needs_review",
+            "reason": "Need HR to verify this policy version.",
+            "language": "en",
+            "citation_count": 1,
+            "citations": [{"document": "HR-policy.pdf", "page": 2, "chunk_id": 12}],
+            "answer_quality": {"outcome": "grounded", "source_confidence": 0.92, "confidence_label": "high"},
+        },
+    )
+
+    assert resp.status_code == 200
+    assert resp.json() == {"recorded": True, "rating": "needs_review"}
+    added = [call.args[0] for call in mock_db_session.add.call_args_list]
+    usage = next(item for item in added if isinstance(item, UsageEvent))
+    audit = next(item for item in added if isinstance(item, AuditLog))
+    review = next(item for item in added if isinstance(item, AnswerReview))
+    assert usage.event_type == "chat.feedback"
+    assert usage.metadata_json["rating"] == "needs_review"
+    assert review.status == "open"
+    assert review.rating == "needs_review"
+    assert review.collection == "HR-docs"
+    assert review.citations_json == [{"document": "HR-policy.pdf", "page": 2, "chunk_id": 12}]
+    assert audit.action == "chat.feedback"
+    assert audit.collection == "HR-docs"
+    mock_db_session.commit.assert_called()
 
 
 @patch("app.main.ChatOpenAI")
