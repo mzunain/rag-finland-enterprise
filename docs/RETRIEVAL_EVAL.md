@@ -51,6 +51,8 @@ The Review Center can run active promoted cases against the current retrieval st
 
 Each run stores the evaluated cases, live retrieval predictions, pass/fail status, case pass rate, citation recall, grounded accuracy, and no-answer accuracy. Use this before and after ingestion, connector sync, permission changes, or retrieval tuning to verify that user-reported failures do not regress.
 
+The Launch Center can also schedule these live promoted evals from the UI. When enabled, the backend checks due schedules every `EVAL_SCHEDULER_POLL_SECONDS` seconds, runs active cases for the configured collection, records the latest pass/fail status, and advances the next due time. If no active cases are available, the scheduler records the failure in the schedule state instead of crashing the process.
+
 To save generated predictions for inspection:
 
 ```bash
