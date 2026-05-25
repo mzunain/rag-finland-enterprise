@@ -146,8 +146,65 @@ export function getStats() {
   return fetchJSON('/admin/stats')
 }
 
+export function getSources({ collection = '', freshness = 'all' } = {}) {
+  const params = new URLSearchParams({ freshness })
+  if (collection) params.set('collection', collection)
+  return fetchJSON(`/admin/sources?${params.toString()}`)
+}
+
+export function syncSource(sourceId) {
+  return fetchJSON(`/admin/sources/${encodeURIComponent(sourceId)}/sync`, { method: 'POST' })
+}
+
+export function syncDueSources(limit = 10) {
+  return fetchJSON(`/admin/sources/sync-due?limit=${encodeURIComponent(limit)}`, { method: 'POST' })
+}
+
 export function getAnalytics() {
   return fetchJSON('/admin/analytics')
+}
+
+export function getAnswerReviews({ status = 'open', collection = '', rating = 'all', limit = 50, offset = 0 } = {}) {
+  const params = new URLSearchParams({ status, rating, limit: String(limit), offset: String(offset) })
+  if (collection) params.set('collection', collection)
+  return fetchJSON(`/admin/reviews?${params.toString()}`)
+}
+
+export function updateAnswerReview(reviewId, payload) {
+  return fetchJSON(`/admin/reviews/${encodeURIComponent(reviewId)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+}
+
+export function promoteReviewToEval(reviewId) {
+  return fetchJSON(`/admin/reviews/${encodeURIComponent(reviewId)}/promote-eval`, { method: 'POST' })
+}
+
+export function getEvalCases({ collection = '', status = 'active' } = {}) {
+  const params = new URLSearchParams({ status })
+  if (collection) params.set('collection', collection)
+  return fetchJSON(`/admin/eval-cases?${params.toString()}`)
+}
+
+export function exportEvalCases({ collection = '' } = {}) {
+  const params = new URLSearchParams()
+  if (collection) params.set('collection', collection)
+  const suffix = params.toString() ? `?${params.toString()}` : ''
+  return fetchJSON(`/admin/eval-cases/export${suffix}`)
+}
+
+export function getEvalRuns({ collection = '', status = 'all', limit = 20 } = {}) {
+  const params = new URLSearchParams({ status, limit: String(limit) })
+  if (collection) params.set('collection', collection)
+  return fetchJSON(`/admin/eval-runs?${params.toString()}`)
+}
+
+export function runEvalCases({ collection = '', limit = 50 } = {}) {
+  const params = new URLSearchParams({ limit: String(limit) })
+  if (collection) params.set('collection', collection)
+  return fetchJSON(`/admin/eval-runs?${params.toString()}`, { method: 'POST' })
 }
 
 export function createCollection(name, description = '') {
@@ -172,6 +229,14 @@ export function getChatHistory(sessionId) {
 
 export function deleteChatSession(sessionId) {
   return fetchJSON(`/chat/sessions/${encodeURIComponent(sessionId)}`, { method: 'DELETE' })
+}
+
+export function sendChatFeedback(payload) {
+  return fetchJSON('/chat/feedback', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
 }
 
 export function getUsers() {

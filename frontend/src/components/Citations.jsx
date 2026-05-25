@@ -1,6 +1,13 @@
 import React from 'react'
 import { useLang } from '../lib/LangContext'
 
+function freshnessClass(status) {
+  if (status === 'fresh') return 'bg-emerald-50 text-emerald-700'
+  if (status === 'aging') return 'bg-amber-50 text-amber-700'
+  if (status === 'stale' || status === 'failed') return 'bg-rose-50 text-rose-700'
+  return 'bg-slate-50 text-slate-500'
+}
+
 export default function Citations({ citations }) {
   const { t } = useLang()
   const [expanded, setExpanded] = React.useState(false)
@@ -16,7 +23,7 @@ export default function Citations({ citations }) {
         onClick={() => setExpanded(!expanded)}
         aria-expanded={expanded}
       >
-        {t('citations.title')} ({citations.length}) {expanded ? '−' : '+'}
+        {t('citations.title')} ({citations.length}) {expanded ? '-' : '+'}
       </button>
       <ul className="space-y-1" role="list" aria-label={t('citations.title')}>
         {shown.map((c) => {
@@ -26,6 +33,11 @@ export default function Citations({ citations }) {
               <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${pct >= 40 ? 'bg-green-500' : pct >= 25 ? 'bg-yellow-500' : 'bg-slate-300'}`} />
               <span className="truncate flex-1 min-w-0" title={c.document}>{c.document}</span>
               <span className="flex-shrink-0 text-slate-400">p.{c.page}</span>
+              {c.source_freshness && (
+                <span className={`flex-shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold ${freshnessClass(c.source_freshness)}`}>
+                  {c.source_freshness}
+                </span>
+              )}
               <span className="flex-shrink-0 font-mono text-[10px]">{pct}%</span>
             </li>
           )

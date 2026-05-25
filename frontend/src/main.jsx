@@ -14,6 +14,7 @@ const ChatPage = React.lazy(() => import('./pages/ChatPage'))
 const AdminPage = React.lazy(() => import('./pages/AdminPage'))
 const DocumentsPage = React.lazy(() => import('./pages/DocumentsPage'))
 const AnalyticsPage = React.lazy(() => import('./pages/AnalyticsPage'))
+const ReviewPage = React.lazy(() => import('./pages/ReviewPage'))
 
 function PageFallback() {
   return (
@@ -51,6 +52,7 @@ function AuthGate() {
             <Route index element={<ChatPage />} />
             <Route path="admin" element={<AdminPage />} />
             <Route path="documents" element={<DocumentsPage />} />
+            <Route path="reviews" element={<ReviewPage />} />
             <Route path="analytics" element={<AnalyticsPage />} />
           </Route>
         </Routes>
