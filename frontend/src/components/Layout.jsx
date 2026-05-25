@@ -10,6 +10,7 @@ import {
   LogOut,
   Menu,
   MessageSquareWarning,
+  Rocket,
   ServerCog,
   ShieldCheck,
   X,
@@ -23,6 +24,7 @@ const navItems = [
   { to: '/documents', key: 'documents', icon: FileText, meta: 'Evidence library' },
   { to: '/admin', key: 'admin', icon: ServerCog, meta: 'Governance' },
   { to: '/reviews', key: 'reviews', icon: MessageSquareWarning, meta: 'Review queue' },
+  { to: '/launch', key: 'launch', icon: Rocket, meta: 'Go-live control' },
   { to: '/analytics', key: 'analytics', icon: BarChart3, meta: 'Usage quality' },
 ]
 

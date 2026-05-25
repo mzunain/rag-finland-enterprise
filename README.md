@@ -25,6 +25,8 @@ password: change-admin-password
 
 Set `OPENAI_API_KEY` in `.env` before using embeddings or chat with the default OpenAI provider. The app can still boot without it for UI, docs, auth, and health checks.
 
+After sign-in, open the Launch tab and click `Seed demo workspace` to load demo corpus, eval cases, and review signals for a polished walkthrough.
+
 Default local ports are `FRONTEND_PORT=5173`, `BACKEND_PORT=8000`, and `POSTGRES_PORT=55432`. Change them in `.env` if any are already in use.
 
 ## Common Commands
@@ -67,6 +69,8 @@ Only `./run` needs Docker for normal app startup. `./run test` also uses local P
 - Improve Finnish retrieval with stemming, compound decomposition, and lexical fallback.
 - Manage collections, documents, users, API keys, quotas, usage, and analytics from the UI.
 - Import connector sources through Confluence/SharePoint-style fetch endpoints.
+- Use the Launch Center to seed demo data, inspect readiness, compare connector coverage, schedule eval runs, and walk a production deploy checklist.
+- Run Launch Center eval schedules automatically in the backend, with pass/fail history and the next due time visible in the UI.
 - Run OpenAI, local OpenAI-compatible models, or sovereignty mode for local providers.
 - Emit request IDs, structured logs, metrics, and audit events.
 
@@ -120,6 +124,8 @@ GitHub Actions runs:
 
 The separate `Retrieval Evaluation` workflow also runs the deterministic retrieval gate every day at 04:17 UTC and can be launched manually from GitHub Actions. This catches citation recall, no-answer, grounded-answer, and multilingual retrieval drift even when no code is being pushed.
 
+The Launch Center also has an in-app eval scheduler. Enable it from the Launch tab to run promoted eval cases automatically inside the backend process. It checks for due work every `EVAL_SCHEDULER_POLL_SECONDS` seconds, records pass/fail status, and advances `next_run_at` after each due run.
+
 The focused mypy target intentionally covers non-ORM modules first. The current SQLAlchemy models use classic declarative mappings, which produce noisy static typing errors until they are migrated to SQLAlchemy `Mapped[...]` models.
 
 ## API
@@ -148,6 +154,13 @@ Versioned endpoints are served under `/v1`. Legacy unversioned paths remain avai
 - `GET /v1/admin/eval-cases/export`
 - `POST /v1/admin/eval-runs`
 - `GET /v1/admin/eval-runs`
+- `GET /v1/admin/launch/readiness`
+- `POST /v1/admin/launch/demo-seed`
+- `GET /v1/admin/launch/connectors`
+- `GET /v1/admin/launch/deploy-checklist`
+- `GET /v1/admin/launch/eval-schedule`
+- `PATCH /v1/admin/launch/eval-schedule`
+- `POST /v1/admin/launch/eval-schedule/run-due`
 - `POST /v1/admin/connectors/import`
 - `POST /v1/chat`
 - `POST /v1/chat/stream`

@@ -207,6 +207,38 @@ export function runEvalCases({ collection = '', limit = 50 } = {}) {
   return fetchJSON(`/admin/eval-runs?${params.toString()}`, { method: 'POST' })
 }
 
+export function getLaunchReadiness() {
+  return fetchJSON('/admin/launch/readiness')
+}
+
+export function seedDemoWorkspace() {
+  return fetchJSON('/admin/launch/demo-seed', { method: 'POST' })
+}
+
+export function getLaunchConnectors() {
+  return fetchJSON('/admin/launch/connectors')
+}
+
+export function getLaunchDeployChecklist() {
+  return fetchJSON('/admin/launch/deploy-checklist')
+}
+
+export function getEvalSchedule() {
+  return fetchJSON('/admin/launch/eval-schedule')
+}
+
+export function updateEvalSchedule(payload) {
+  return fetchJSON('/admin/launch/eval-schedule', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+}
+
+export function runDueEvalSchedule(force = false) {
+  return fetchJSON(`/admin/launch/eval-schedule/run-due?force=${force ? 'true' : 'false'}`, { method: 'POST' })
+}
+
 export function createCollection(name, description = '') {
   return fetchJSON('/admin/collections', {
     method: 'POST',
