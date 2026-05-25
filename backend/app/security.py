@@ -17,7 +17,7 @@ from .auth_utils import hash_api_key, month_window_start, utc_now, verify_passwo
 from .config import settings
 from .db import ApiKey, CollectionPermission, SessionLocal, UserAccount
 
-UserName = Annotated[str, StringConstraints(min_length=3, max_length=64, pattern=r"^[a-zA-Z0-9_.-]+$")]
+UserName = Annotated[str, StringConstraints(min_length=3, max_length=255, pattern=r"^[a-zA-Z0-9_.@+-]+$")]
 CollectionName = Annotated[
     str,
     StringConstraints(min_length=1, max_length=100, pattern=r"^(\*|[A-Za-z0-9][A-Za-z0-9._-]+)$"),
@@ -29,6 +29,7 @@ class AuthUserConfig(BaseModel):
     password: Annotated[str, StringConstraints(min_length=8, max_length=128)]
     role: Literal["admin", "editor", "viewer"]
     collections: list[CollectionName] = Field(default_factory=list, max_length=50)
+    source_groups: list[str] = Field(default_factory=list, max_length=100)
 
     @field_validator("collections")
     @classmethod
@@ -44,6 +45,7 @@ class CurrentUser(BaseModel):
     role: Literal["admin", "editor", "viewer"]
     collections: set[str] = Field(default_factory=set)
     collection_permissions: dict[str, Literal["read", "write"]] = Field(default_factory=dict)
+    source_groups: set[str] = Field(default_factory=set)
     auth_provider: Literal["local", "oidc", "api_key"] = "local"
     api_key_id: int | None = None
 
@@ -144,6 +146,7 @@ def authenticate_user(username: str, password: str, db: Session | None = None) -
         role=user.role,
         collection_permissions=perms,
         collections=_permissions_to_collection_set(perms),
+        source_groups=set(user.source_groups),
         auth_provider="local",
     )
 
@@ -156,6 +159,7 @@ def create_access_token(user: CurrentUser | AuthUserConfig) -> tuple[str, int]:
             role=user.role,
             collections=_permissions_to_collection_set(perms),
             collection_permissions=perms,
+            source_groups=set(user.source_groups),
             auth_provider="local",
         )
     else:
@@ -168,6 +172,7 @@ def create_access_token(user: CurrentUser | AuthUserConfig) -> tuple[str, int]:
         "role": principal.role,
         "collections": sorted(principal.collections),
         "permissions": principal.collection_permissions,
+        "source_groups": sorted(principal.source_groups),
         "provider": principal.auth_provider,
         "iat": int(now.timestamp()),
         "exp": int(expires.timestamp()),
@@ -181,6 +186,7 @@ def _build_current_user_from_payload(payload: dict, *, default_provider: str = "
     role = payload.get("role")
     collections = payload.get("collections", [])
     permissions = payload.get("permissions") or {}
+    source_groups = payload.get("source_groups", [])
 
     if not isinstance(username, str) or role not in {"admin", "editor", "viewer"}:
         raise HTTPException(
@@ -191,6 +197,8 @@ def _build_current_user_from_payload(payload: dict, *, default_provider: str = "
 
     if not isinstance(collections, list):
         collections = []
+    if not isinstance(source_groups, list):
+        source_groups = []
 
     parsed_permissions: dict[str, Literal["read", "write"]] = {}
     if isinstance(permissions, dict):
@@ -213,6 +221,7 @@ def _build_current_user_from_payload(payload: dict, *, default_provider: str = "
         role=role,
         collections=allowed,
         collection_permissions=parsed_permissions,
+        source_groups={g for g in source_groups if isinstance(g, str)},
         auth_provider=provider,
     )
 
@@ -277,6 +286,13 @@ def _try_oidc_token(token: str, db: Session | None = None) -> CurrentUser | None
     elif isinstance(collections_claim, list):
         collections = [c for c in collections_claim if isinstance(c, str)]
 
+    groups_claim = claims.get(settings.oidc_claim_groups, [])
+    source_groups: list[str] = []
+    if isinstance(groups_claim, str):
+        source_groups = [groups_claim]
+    elif isinstance(groups_claim, list):
+        source_groups = [g for g in groups_claim if isinstance(g, str)]
+
     permissions = _permissions_from_collections(role, collections)
 
     if db is not None and settings.db_auth_enabled:
@@ -322,6 +338,7 @@ def _try_oidc_token(token: str, db: Session | None = None) -> CurrentUser | None
         role=role,
         collection_permissions=permissions,
         collections=_permissions_to_collection_set(permissions),
+        source_groups=set(source_groups),
         auth_provider="oidc",
     )
 

@@ -48,6 +48,29 @@ def test_fetch_connector_document_confluence_json():
     assert "Salasanat" in doc.content
 
 
+def test_fetch_connector_document_preserves_json_acl():
+    mock_response = MagicMock()
+    mock_response.headers = {"content-type": "application/json"}
+    mock_response.json.return_value = {
+        "name": "Restricted plan",
+        "content": "Confidential launch plan.",
+        "source_acl": {
+            "allowed_users": ["owner@example.com"],
+            "allowed_groups": ["leadership"],
+        },
+    }
+    mock_response.raise_for_status = MagicMock()
+
+    with patch("app.connectors.httpx.Client") as client_cls:
+        client_instance = client_cls.return_value.__enter__.return_value
+        client_instance.get.return_value = mock_response
+
+        doc = fetch_connector_document("sharepoint", "https://sharepoint.example.com/drive/items/1")
+
+    assert doc.metadata["source_acl"]["allowed_users"] == ["owner@example.com"]
+    assert doc.metadata["source_acl"]["allowed_groups"] == ["leadership"]
+
+
 def test_fetch_connector_document_empty_content_raises():
     mock_response = MagicMock()
     mock_response.headers = {"content-type": "text/plain"}
