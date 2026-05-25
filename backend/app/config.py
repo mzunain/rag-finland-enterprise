@@ -39,6 +39,7 @@ class Settings(BaseSettings):
     oidc_claim_username: str = "email"
     oidc_claim_role: str = "role"
     oidc_claim_collections: str = "collections"
+    oidc_claim_groups: str = "groups"
     llm_provider: str = "openai"  # openai | local | auto
     embedding_provider: str = "openai"  # openai | local | turkunlp | auto
     data_sovereignty_mode: bool = False
@@ -53,8 +54,11 @@ class Settings(BaseSettings):
     connector_fetch_timeout_seconds: int = Field(default=20, ge=3, le=120)
     connector_max_sources_per_import: int = Field(default=20, ge=1, le=200)
     connector_allowed_domains: str = ""
+    source_aging_after_days: int = Field(default=30, ge=1, le=3650)
+    source_stale_after_days: int = Field(default=90, ge=2, le=3650)
+    source_sync_interval_hours: int = Field(default=24, ge=1, le=8760)
 
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore", protected_namespaces=("settings_",))
 
 
 settings = Settings()
