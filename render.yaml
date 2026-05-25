@@ -1,0 +1,30 @@
+services:
+  - type: web
+    name: rag-finland-backend
+    runtime: docker
+    plan: free
+    rootDir: backend
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: JWT_SECRET_KEY
+        generateValue: true
+      - key: AUTH_REQUIRED
+        value: "true"
+      - key: DB_AUTH_ENABLED
+        value: "true"
+      - key: API_VERSION_PREFIX
+        value: /v1
+      - key: MODEL_NAME
+        value: gpt-4o-mini
+      - key: EMBEDDING_MODEL
+        value: text-embedding-3-small
+      - key: CORS_ORIGINS
+        sync: false
+      - key: LOG_LEVEL
+        value: INFO

@@ -1,0 +1,345 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$ROOT_DIR"
+
+COMMAND="${1:-up}"
+if [ "$#" -gt 0 ]; then
+  shift
+fi
+
+COMPOSE=()
+
+usage() {
+  cat <<'EOF'
+RAG Finland local runner
+
+Usage:
+  ./run              Start the full app with Docker Compose
+  ./run up           Same as ./run
+  ./run status       Show container status and health URLs
+  ./run logs [svc]   Follow logs for all services or one service
+  ./run stop         Stop containers
+  ./run clean        Stop containers and remove local volumes
+  ./run test         Install local deps if needed, then run tests/build checks
+  ./run eval         Run the deterministic retrieval evaluation gate
+  ./run doctor       Check required local tools
+  ./run help         Show this help
+
+Default login after startup:
+  username: admin
+  password: change-admin-password
+EOF
+}
+
+need_python() {
+  if ! command -v python3 >/dev/null 2>&1; then
+    echo "python3 is required for setup helpers. Install Python 3, then run ./run again." >&2
+    exit 1
+  fi
+}
+
+detect_compose() {
+  if [ "${#COMPOSE[@]}" -gt 0 ]; then
+    return
+  fi
+  if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
+    COMPOSE=(docker compose)
+  elif command -v docker-compose >/dev/null 2>&1; then
+    COMPOSE=(docker-compose)
+  else
+    echo "Docker Compose is required. Install Docker Desktop, then run ./run again." >&2
+    exit 1
+  fi
+}
+
+detect_compose_optional() {
+  if [ "${#COMPOSE[@]}" -gt 0 ]; then
+    return 0
+  fi
+  if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
+    COMPOSE=(docker compose)
+    return 0
+  fi
+  if command -v docker-compose >/dev/null 2>&1; then
+    COMPOSE=(docker-compose)
+    return 0
+  fi
+  return 1
+}
+
+ensure_env_file() {
+  if [ ! -f .env ]; then
+    cp .env.example .env
+    echo "Created .env from .env.example."
+  fi
+}
+
+secret_value() {
+  need_python
+  python3 - <<'PY'
+import secrets
+print(secrets.token_urlsafe(48))
+PY
+}
+
+set_env_value() {
+  key="$1"
+  value="$2"
+  need_python
+  python3 - "$key" "$value" <<'PY'
+from pathlib import Path
+import sys
+
+key, value = sys.argv[1], sys.argv[2]
+path = Path(".env")
+lines = path.read_text(encoding="utf-8").splitlines()
+written = False
+updated = []
+for line in lines:
+    if line.startswith(f"{key}="):
+        updated.append(f"{key}={value}")
+        written = True
+    else:
+        updated.append(line)
+if not written:
+    if updated and updated[-1] != "":
+        updated.append("")
+    updated.append(f"{key}={value}")
+path.write_text("\n".join(updated) + "\n", encoding="utf-8")
+PY
+}
+
+env_value() {
+  key="$1"
+  ensure_env_file
+  grep -E "^${key}=" .env | tail -n 1 | cut -d= -f2- || true
+}
+
+ensure_env_value() {
+  key="$1"
+  value="$2"
+  if [ -z "$(env_value "$key")" ]; then
+    set_env_value "$key" "$value"
+    echo "Set ${key} in .env."
+  fi
+}
+
+prepare_env() {
+  need_python
+  ensure_env_file
+  ensure_env_value FRONTEND_PORT 5173
+  ensure_env_value BACKEND_PORT 8000
+  if [ "$(env_value POSTGRES_PORT)" = "5433" ]; then
+    set_env_value POSTGRES_PORT 55432
+    echo "Updated POSTGRES_PORT in .env from 5433 to 55432 to avoid common local Postgres conflicts."
+  fi
+  ensure_env_value POSTGRES_PORT 55432
+  ensure_env_value AUTH_USERS_JSON '[{"username":"admin","password":"change-admin-password","role":"admin","collections":["*"]},{"username":"viewer","password":"change-viewer-password","role":"viewer","collections":["HR-docs"]}]'
+
+  if [ "$(env_value JWT_SECRET_KEY)" = "replace-with-64-char-random-secret" ] || [ "$(env_value JWT_SECRET_KEY)" = "change-me-in-production" ] || [ -z "$(env_value JWT_SECRET_KEY)" ]; then
+    set_env_value JWT_SECRET_KEY "$(secret_value)"
+    echo "Set JWT_SECRET_KEY in .env."
+  fi
+
+  if ! grep -q '^OPENAI_API_KEY=.' .env; then
+    echo "OPENAI_API_KEY is empty in .env. The app will start, but embedding/chat calls need a key or a local provider."
+  fi
+}
+
+wait_for_url() {
+  label="$1"
+  url="$2"
+  attempts="${3:-45}"
+  need_python
+  printf 'Waiting for %s' "$label"
+  for _ in $(seq 1 "$attempts"); do
+    if python3 - "$url" >/dev/null 2>&1 <<'PY'
+import sys
+import urllib.request
+
+urllib.request.urlopen(sys.argv[1], timeout=2).read()
+PY
+    then
+      printf ' ready\n'
+      return 0
+    fi
+    printf '.'
+    sleep 2
+  done
+  printf ' not ready yet\n'
+  return 1
+}
+
+print_urls() {
+  FRONTEND_PORT="$(env_value FRONTEND_PORT)"
+  BACKEND_PORT="$(env_value BACKEND_PORT)"
+
+  cat <<'EOF'
+
+RAG Finland is running.
+
+EOF
+  cat <<EOF
+Frontend: http://localhost:${FRONTEND_PORT}
+Backend:  http://localhost:${BACKEND_PORT}/v1/health
+API docs: http://localhost:${BACKEND_PORT}/docs
+EOF
+  cat <<'EOF'
+
+Default local login:
+  username: admin
+  password: change-admin-password
+
+Useful commands:
+  ./run logs
+  ./run stop
+  ./run test
+EOF
+}
+
+ensure_python_env() {
+  need_python
+  if [ ! -x .venv/bin/python ]; then
+    python3 -m venv .venv
+  fi
+  .venv/bin/python -m pip install --upgrade pip >/dev/null
+  .venv/bin/python -m pip install -r backend/requirements.txt >/dev/null
+}
+
+node_bin() {
+  if [ -n "${NODE_BIN:-}" ] && [ -x "$NODE_BIN" ]; then
+    printf '%s\n' "$NODE_BIN"
+    return 0
+  fi
+  local bundled_node="$HOME/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node"
+  if [ -x "$bundled_node" ]; then
+    printf '%s\n' "$bundled_node"
+    return 0
+  fi
+  command -v node
+}
+
+ensure_frontend_deps() {
+  if ! node_bin >/dev/null 2>&1; then
+    echo "Node.js 20+ is required for frontend checks. Install Node.js, then run ./run test again." >&2
+    exit 1
+  fi
+  if [ ! -d frontend/node_modules ]; then
+    if ! command -v npm >/dev/null 2>&1; then
+      echo "npm is required to install frontend dependencies. Install Node.js 20+ with npm, then run ./run test again." >&2
+      exit 1
+    fi
+    (cd frontend && npm ci)
+  fi
+}
+
+frontend_build() {
+  ensure_frontend_deps
+  if command -v npm >/dev/null 2>&1; then
+    (cd frontend && npm run build)
+  else
+    (cd frontend && "$(node_bin)" node_modules/vite/bin/vite.js build)
+  fi
+}
+
+run_eval_gate() {
+  ensure_python_env
+  (
+    cd backend
+    PYTHONPATH=. ../.venv/bin/python -m app.evaluation \
+      --cases evals/retrieval_golden.json \
+      --corpus evals/seed_corpus.json \
+      --min-citation-recall 1.0 \
+      --min-no-answer-accuracy 1.0 \
+      --min-grounded-accuracy 1.0 \
+      --min-case-pass-rate 1.0 \
+      --pretty
+  )
+}
+
+run_tests() {
+  ensure_python_env
+  ensure_frontend_deps
+  (
+    cd backend
+    PYTHONPATH=. ../.venv/bin/python -m pytest -q tests --ignore=tests/integration
+    PYTHONPATH=. ../.venv/bin/mypy
+  )
+  run_eval_gate
+  frontend_build
+  if detect_compose_optional; then
+    "${COMPOSE[@]}" --env-file .env.example config >/dev/null
+  else
+    echo "Skipping Compose validation because Docker Compose is not available."
+  fi
+}
+
+start_stack() {
+  detect_compose
+  prepare_env
+  "${COMPOSE[@]}" up --build -d
+  FRONTEND_PORT="$(env_value FRONTEND_PORT)"
+  BACKEND_PORT="$(env_value BACKEND_PORT)"
+  wait_for_url "backend" "http://localhost:${BACKEND_PORT}/v1/health" 45 || true
+  wait_for_url "frontend" "http://localhost:${FRONTEND_PORT}" 45 || true
+  print_urls
+}
+
+show_status() {
+  detect_compose
+  prepare_env
+  "${COMPOSE[@]}" ps
+  print_urls
+}
+
+doctor() {
+  echo "Checking local tools..."
+  command -v python3 >/dev/null 2>&1 && python3 --version || echo "python3 missing"
+  command -v docker >/dev/null 2>&1 && docker --version || echo "docker missing"
+  if command -v docker >/dev/null 2>&1; then
+    docker compose version || true
+  fi
+  node_bin >/dev/null 2>&1 && "$(node_bin)" --version || echo "node missing"
+  command -v npm >/dev/null 2>&1 && npm --version || echo "npm missing"
+}
+
+case "$COMMAND" in
+  up|start)
+    start_stack
+    ;;
+  status|ps)
+    show_status
+    ;;
+  logs)
+    detect_compose
+    "${COMPOSE[@]}" logs -f --tail=100 "$@"
+    ;;
+  stop|down)
+    detect_compose
+    "${COMPOSE[@]}" down
+    ;;
+  clean|reset)
+    detect_compose
+    "${COMPOSE[@]}" down -v
+    ;;
+  test|check)
+    run_tests
+    ;;
+  eval)
+    run_eval_gate
+    ;;
+  doctor)
+    doctor
+    ;;
+  help|-h|--help)
+    usage
+    ;;
+  *)
+    echo "Unknown command: $COMMAND" >&2
+    echo >&2
+    usage >&2
+    exit 2
+    ;;
+esac
