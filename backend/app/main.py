@@ -858,6 +858,357 @@ def _eval_run_summary(rows: list[EvaluationRun]) -> dict:
     }
 
 
+EVAL_SCHEDULE_SETTING_KEY = "eval_schedule"
+DEMO_SEED_SESSION_ID = "demo-launch-seed"
+
+
+def _count_model(db: Session, model, *filters) -> int:
+    try:
+        query = db.query(model)
+        for condition in filters:
+            query = query.filter(condition)
+        return int(query.count() or 0)
+    except (TypeError, ValueError, SQLAlchemyError, AttributeError):
+        return 0
+
+
+def _launch_status(status: str, title: str, detail: str, action: str, owner: str = "Admin") -> dict:
+    return {"status": status, "title": title, "detail": detail, "action": action, "owner": owner}
+
+
+def _launch_score(checks: list[dict]) -> int:
+    if not checks:
+        return 0
+    weights = {"ok": 1.0, "warning": 0.5, "error": 0.0}
+    return round((sum(weights.get(item.get("status"), 0.0) for item in checks) / len(checks)) * 100)
+
+
+def _default_admin_password_active(db: Session) -> bool:
+    try:
+        row = db.query(UserAccount).filter(UserAccount.username == "admin", UserAccount.is_active.is_(True)).first()
+        if isinstance(row, UserAccount) and row.password_hash:
+            return verify_password("change-admin-password", row.password_hash)
+    except (SQLAlchemyError, AttributeError, TypeError, ValueError):
+        pass
+
+    try:
+        raw_users = json.loads(settings.auth_users_json)
+    except json.JSONDecodeError:
+        return False
+    if not isinstance(raw_users, list):
+        return False
+    return any(
+        isinstance(item, dict)
+        and item.get("username") == "admin"
+        and item.get("password") == "change-admin-password"
+        for item in raw_users
+    )
+
+
+def _provider_ready() -> bool:
+    if settings.data_sovereignty_mode:
+        return True
+    providers = {settings.llm_provider.lower(), settings.embedding_provider.lower()}
+    if "openai" in providers and settings.openai_api_key:
+        return True
+    return bool(providers.intersection({"local", "turkunlp", "auto"}))
+
+
+def _launch_readiness_payload(db: Session) -> dict:
+    source_rows = []
+    try:
+        source_rows = db.query(DocumentSource).limit(5000).all()
+    except (SQLAlchemyError, AttributeError, TypeError):
+        source_rows = []
+    source_summary = _source_summary(source_rows)
+    metrics = {
+        "users": _count_model(db, UserAccount),
+        "sources": _count_model(db, DocumentSource),
+        "chunks": _count_model(db, DocumentChunk),
+        "open_reviews": _count_model(db, AnswerReview, AnswerReview.status == "open"),
+        "active_eval_cases": _count_model(db, EvaluationCase, EvaluationCase.status == "active"),
+        "eval_runs": _count_model(db, EvaluationRun),
+    }
+    default_password = _default_admin_password_active(db)
+    jwt_rotated = settings.jwt_secret_key not in {"", "change-me-in-production", "replace-with-64-char-random-secret"}
+    provider_ready = _provider_ready()
+    demo_seeded = _count_model(db, EvaluationCase, EvaluationCase.case_id.like("seed-%")) > 0
+    source_risk = (source_summary.get("stale", 0) or 0) + (source_summary.get("failed", 0) or 0)
+    checks = [
+        _launch_status(
+            "warning" if default_password else "ok",
+            "Admin password",
+            "Default admin password is still accepted." if default_password else "Default admin password is not active.",
+            "Rotate the admin password before external demos." if default_password else "No action needed.",
+        ),
+        _launch_status(
+            "ok" if jwt_rotated else "error",
+            "JWT secret",
+            "A non-default JWT secret is configured." if jwt_rotated else "JWT secret is still a placeholder.",
+            "Run ./run or set JWT_SECRET_KEY manually." if not jwt_rotated else "No action needed.",
+        ),
+        _launch_status(
+            "ok" if provider_ready else "warning",
+            "AI provider",
+            "LLM and embedding provider settings look usable." if provider_ready else "No OpenAI key or local provider route is ready.",
+            "Set OPENAI_API_KEY or configure local provider variables." if not provider_ready else "No action needed.",
+        ),
+        _launch_status(
+            "ok" if demo_seeded else "warning",
+            "Demo workspace",
+            "Seeded demo docs and eval cases are available." if demo_seeded else "Demo data has not been loaded.",
+            "Use Seed demo workspace in Launch Center." if not demo_seeded else "No action needed.",
+        ),
+        _launch_status(
+            "ok" if metrics["active_eval_cases"] else "warning",
+            "Eval coverage",
+            f"{metrics['active_eval_cases']} active eval cases are available.",
+            "Promote Review Center cases or seed demo evals." if not metrics["active_eval_cases"] else "Run evals after retrieval changes.",
+        ),
+        _launch_status(
+            "ok" if source_risk == 0 else "warning",
+            "Source freshness",
+            f"{source_risk} stale or failed source records.",
+            "Sync stale sources from Admin." if source_risk else "No action needed.",
+        ),
+    ]
+    return {
+        "score": _launch_score(checks),
+        "checks": checks,
+        "metrics": metrics,
+        "source_freshness": source_summary,
+        "generated_at": str(utc_now()),
+    }
+
+
+def _evals_dir() -> FilePath:
+    return FilePath(__file__).resolve().parents[1] / "evals"
+
+
+def _load_eval_fixture(name: str) -> dict:
+    return json.loads((_evals_dir() / name).read_text(encoding="utf-8"))
+
+
+def _seed_demo_workspace(db: Session, current_user: CurrentUser) -> dict:
+    corpus = _load_eval_fixture("seed_corpus.json").get("chunks", [])
+    cases = _load_eval_fixture("retrieval_golden.json").get("cases", [])
+    now = utc_now()
+    created = {"collections": 0, "chunks": 0, "sources": 0, "eval_cases": 0, "reviews": 0}
+
+    collection_names = sorted(
+        {str(item.get("collection") or "").strip() for item in [*corpus, *cases] if isinstance(item, dict) and item.get("collection")}
+    )
+    for name in collection_names:
+        if not db.query(Collection).filter(Collection.name == name).first():
+            db.add(Collection(name=name, description="Seeded demo collection"))
+            created["collections"] += 1
+
+    for index, item in enumerate(corpus):
+        if not isinstance(item, dict):
+            continue
+        collection = str(item.get("collection") or "HR-docs")
+        document = str(item.get("document") or "demo-document.txt")
+        page = int(item.get("page") or 1)
+        chunk_id = str(item.get("chunk_id") or item.get("id") or f"demo-{index}")
+        existing = (
+            db.query(DocumentChunk)
+            .filter(
+                DocumentChunk.collection == collection,
+                DocumentChunk.document_name == document,
+                DocumentChunk.page == page,
+                DocumentChunk.chunk_index == index,
+            )
+            .first()
+        )
+        if not existing:
+            content = str(item.get("content") or "")
+            title = str(item.get("title") or document)
+            db.add(
+                DocumentChunk(
+                    collection=collection,
+                    document_name=document,
+                    page=page,
+                    chunk_index=index,
+                    content=content,
+                    search_text=finnish_search_text(f"{title} {content}"),
+                    metadata_json={"demo_seed": True, "chunk_id": chunk_id, "title": title},
+                )
+            )
+            created["chunks"] += 1
+        source = _upsert_document_source(
+            db,
+            collection=collection,
+            document_name=document,
+            connector="demo",
+            source_url=f"demo://{collection}/{document}",
+            source_updated_at=now,
+        )
+        if not getattr(source, "id", None):
+            created["sources"] += 1
+
+    for item in cases:
+        if not isinstance(item, dict):
+            continue
+        case_id = f"seed-{item.get('id')}"
+        if db.query(EvaluationCase).filter(EvaluationCase.case_id == case_id).first():
+            continue
+        db.add(
+            EvaluationCase(
+                case_id=case_id,
+                review_id=None,
+                language=item.get("language") or "en",
+                collection=item.get("collection") or "HR-docs",
+                question=item.get("question") or "",
+                expectation=item.get("expectation") or "answer",
+                required_citations_json=item.get("required_citations") or [],
+                notes_json={"source": "demo_seed", "fixture_case_id": item.get("id")},
+                status="active",
+                created_by=current_user.username,
+            )
+        )
+        created["eval_cases"] += 1
+
+    existing_review = db.query(AnswerReview).filter(AnswerReview.session_id == DEMO_SEED_SESSION_ID).first()
+    if not existing_review:
+        db.add(
+            AnswerReview(
+                session_id=DEMO_SEED_SESSION_ID,
+                collection="HR-docs",
+                question="What is tomorrow's cafeteria menu?",
+                answer_excerpt="I could not find relevant information in HR-docs.",
+                rating="needs_review",
+                reason="Demo review showing how weak answers become eval cases.",
+                language="en",
+                citation_count=0,
+                citations_json=[],
+                source_confidence=0.0,
+                confidence_label="no_context",
+                answer_quality_json={"outcome": "no_context", "demo_seed": True},
+                status="open",
+                created_by=current_user.username,
+            )
+        )
+        created["reviews"] += 1
+
+    return {"created": created, "total_created": sum(created.values())}
+
+
+def _connector_catalog_payload() -> dict:
+    connectors = [
+        {
+            "id": "confluence",
+            "label": "Confluence",
+            "status": "available",
+            "coverage": "JSON page import, HTML body extraction, source ACL capture",
+            "setup": "Use Admin connector import with a Confluence REST API URL and token.",
+        },
+        {
+            "id": "sharepoint",
+            "label": "SharePoint",
+            "status": "available",
+            "coverage": "Document JSON import, source ACL capture, freshness tracking",
+            "setup": "Use Admin connector import with a SharePoint/Graph document URL and token.",
+        },
+        {
+            "id": "generic-url",
+            "label": "Generic URL",
+            "status": "available",
+            "coverage": "HTML, text, and JSON import with freshness metadata",
+            "setup": "Allowlist domains with CONNECTOR_ALLOWED_DOMAINS for production.",
+        },
+        {
+            "id": "google-drive",
+            "label": "Google Drive",
+            "status": "planned",
+            "coverage": "OAuth app, Drive file picker, native Docs export, inherited ACLs",
+            "setup": "Use the current generic URL import until native OAuth is configured.",
+        },
+        {
+            "id": "jira",
+            "label": "Jira",
+            "status": "planned",
+            "coverage": "Issue and project sync, comments, permissions, freshness webhooks",
+            "setup": "Prioritize after M365/Drive because enterprise search value depends on tickets.",
+        },
+    ]
+    return {
+        "connectors": connectors,
+        "available": sum(1 for item in connectors if item["status"] == "available"),
+        "planned": sum(1 for item in connectors if item["status"] == "planned"),
+    }
+
+
+def _deploy_checklist_payload(db: Session) -> dict:
+    jwt_rotated = settings.jwt_secret_key not in {"", "change-me-in-production", "replace-with-64-char-random-secret"}
+    provider_ready = _provider_ready()
+    eval_cases = _count_model(db, EvaluationCase, EvaluationCase.status == "active")
+    items = [
+        _launch_status("ok" if settings.auth_required else "error", "Auth required", "AUTH_REQUIRED is enabled.", "Keep enabled for demos and production."),
+        _launch_status("ok" if jwt_rotated else "error", "JWT secret", "JWT secret is not a placeholder." if jwt_rotated else "JWT secret is still a placeholder.", "Set JWT_SECRET_KEY."),
+        _launch_status("ok" if provider_ready else "warning", "Model provider", "Provider configuration is ready." if provider_ready else "Provider route is incomplete.", "Set OpenAI or local provider env vars."),
+        _launch_status("ok" if settings.db_auth_enabled else "warning", "Database users", "DB-backed auth is enabled.", "Keep DB_AUTH_ENABLED=true."),
+        _launch_status("ok" if settings.cors_origins else "warning", "CORS origins", f"CORS_ORIGINS={settings.cors_origins}", "Limit CORS to deployed frontend origins."),
+        _launch_status("ok" if eval_cases else "warning", "Regression gate", f"{eval_cases} active eval cases.", "Seed demo cases or promote reviews."),
+        _launch_status("ok" if settings.connector_allowed_domains else "warning", "Connector allowlist", "Connector domain allowlist is configured." if settings.connector_allowed_domains else "Connector domain allowlist is empty.", "Set CONNECTOR_ALLOWED_DOMAINS before production connector sync."),
+    ]
+    return {"score": _launch_score(items), "items": items, "generated_at": str(utc_now())}
+
+
+def _default_eval_schedule() -> dict:
+    return {
+        "enabled": False,
+        "interval_hours": 24,
+        "collection": "",
+        "alert_email": "",
+        "next_run_at": None,
+        "last_due_run_at": None,
+        "last_status": "not_configured",
+    }
+
+
+def _get_launch_setting(db: Session, key: str) -> dict:
+    try:
+        row = db.query(LaunchSetting).filter(LaunchSetting.key == key).first()
+    except (SQLAlchemyError, AttributeError, TypeError):
+        return {}
+    if not isinstance(row, LaunchSetting):
+        return {}
+    value = row.value_json or {}
+    return value if isinstance(value, dict) else {}
+
+
+def _save_launch_setting(db: Session, key: str, value: dict, current_user: CurrentUser) -> LaunchSetting:
+    row = db.query(LaunchSetting).filter(LaunchSetting.key == key).first()
+    if not isinstance(row, LaunchSetting):
+        row = LaunchSetting(key=key, created_at=utc_now())
+        db.add(row)
+    row.value_json = value
+    row.updated_by = current_user.username
+    row.updated_at = utc_now()
+    return row
+
+
+def _eval_schedule_payload(db: Session) -> dict:
+    return {**_default_eval_schedule(), **_get_launch_setting(db, EVAL_SCHEDULE_SETTING_KEY)}
+
+
+def _parse_schedule_time(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is not None:
+        parsed = parsed.astimezone(UTC).replace(tzinfo=None)
+    return parsed
+
+
+def _next_schedule_time(interval_hours: int, now: datetime | None = None) -> str:
+    current = now or utc_now()
+    return str(current + timedelta(hours=max(1, interval_hours)))
+
+
 def _answer_review_summary(rows) -> dict:
     total = len(rows)
     open_rows = [row for row in rows if row.status == "open"]
