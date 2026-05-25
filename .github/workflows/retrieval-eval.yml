@@ -1,0 +1,43 @@
+name: Retrieval Evaluation
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 4 * * *"
+
+jobs:
+  retrieval-eval:
+    name: Scheduled retrieval regression gate
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      PYTHONPATH: .
+      DATABASE_URL: sqlite+pysqlite:///:memory:
+      JWT_SECRET_KEY: scheduled-eval-local-secret
+      OPENAI_API_KEY: ""
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install backend dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run retrieval evaluation gate
+        run: |
+          python -m app.evaluation \
+            --cases evals/retrieval_golden.json \
+            --corpus evals/seed_corpus.json \
+            --min-citation-recall 1.0 \
+            --min-no-answer-accuracy 1.0 \
+            --min-grounded-accuracy 1.0 \
+            --min-case-pass-rate 1.0 \
+            --pretty

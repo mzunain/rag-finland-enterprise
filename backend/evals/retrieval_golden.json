@@ -1,0 +1,54 @@
+{
+  "version": 1,
+  "description": "Golden retrieval cases for citation recall and no-answer behavior.",
+  "cases": [
+    {
+      "id": "hr-en-annual-leave",
+      "language": "en",
+      "collection": "HR-docs",
+      "question": "How many annual leave days do employees receive?",
+      "expectation": "answer",
+      "required_citations": [
+        { "document": "HR-policy.pdf", "page": 2 }
+      ]
+    },
+    {
+      "id": "hr-fi-annual-leave",
+      "language": "fi",
+      "collection": "HR-docs",
+      "question": "Kuinka monta vuosilomapaivaa tyontekijoilla on?",
+      "expectation": "answer",
+      "required_citations": [
+        { "document": "HR-policy.pdf", "page": 2 }
+      ]
+    },
+    {
+      "id": "legal-sv-dpa",
+      "language": "sv",
+      "collection": "Legal-docs",
+      "question": "Vilka krav galler for personuppgiftsbitraden?",
+      "expectation": "answer",
+      "required_citations": [
+        { "document": "DPA-template.pdf", "page": 4 }
+      ]
+    },
+    {
+      "id": "technical-en-restore",
+      "language": "en",
+      "collection": "Technical-docs",
+      "question": "What is the restore procedure after a failed deployment?",
+      "expectation": "answer",
+      "required_citations": [
+        { "document": "deployment-runbook.md", "page": 1 }
+      ]
+    },
+    {
+      "id": "hr-en-cafeteria-menu",
+      "language": "en",
+      "collection": "HR-docs",
+      "question": "What is tomorrow's cafeteria menu?",
+      "expectation": "no_answer",
+      "required_citations": []
+    }
+  ]
+}
