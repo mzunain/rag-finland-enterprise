@@ -1,6 +1,6 @@
 const translations = {
   en: {
-    nav: { chat: 'Chat', documents: 'Documents', admin: 'Admin', analytics: 'Analytics' },
+    nav: { chat: 'Chat', documents: 'Documents', admin: 'Admin', reviews: 'Reviews', analytics: 'Analytics' },
     header: { title: 'RAG Finland Enterprise' },
     chat: {
       title: 'Bilingual Chat',
@@ -76,7 +76,7 @@ const translations = {
     lang: { fi: 'Suomi', en: 'English', sv: 'Svenska' },
   },
   fi: {
-    nav: { chat: 'Keskustelu', documents: 'Dokumentit', admin: 'Hallinta', analytics: 'Analytiikka' },
+    nav: { chat: 'Keskustelu', documents: 'Dokumentit', admin: 'Hallinta', reviews: 'Arvioinnit', analytics: 'Analytiikka' },
     header: { title: 'RAG Finland Enterprise' },
     chat: {
       title: 'Kaksikielinen keskustelu',
@@ -152,7 +152,7 @@ const translations = {
     lang: { fi: 'Suomi', en: 'English', sv: 'Svenska' },
   },
   sv: {
-    nav: { chat: 'Chatt', documents: 'Dokument', admin: 'Admin', analytics: 'Analys' },
+    nav: { chat: 'Chatt', documents: 'Dokument', admin: 'Admin', reviews: 'Granskning', analytics: 'Analys' },
     header: { title: 'RAG Finland Enterprise' },
     chat: {
       title: 'Tvåspråkig chatt',
