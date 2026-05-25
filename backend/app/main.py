@@ -1,9 +1,10 @@
+import asyncio
 import logging
 import secrets
 import time
 import traceback
 import uuid
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from datetime import UTC, datetime, timedelta
 from email.utils import parsedate_to_datetime
 from pathlib import Path as FilePath
@@ -75,7 +76,14 @@ async def lifespan(app: FastAPI):
     init_db()
     if settings.auth_required and settings.jwt_secret_key == "change-me-in-production":
         logger.warning("JWT_SECRET_KEY is using the default placeholder; set a secure value before deployment")
-    yield
+    scheduler_task = asyncio.create_task(_eval_scheduler_loop())
+    app.state.eval_scheduler_task = scheduler_task
+    try:
+        yield
+    finally:
+        scheduler_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await scheduler_task
 
 
 app = FastAPI(
@@ -860,6 +868,7 @@ def _eval_run_summary(rows: list[EvaluationRun]) -> dict:
 
 EVAL_SCHEDULE_SETTING_KEY = "eval_schedule"
 DEMO_SEED_SESSION_ID = "demo-launch-seed"
+EVAL_SCHEDULE_RUNTIME_FIELDS = {"scheduler_poll_seconds", "scheduler_runtime"}
 
 
 def _count_model(db: Session, model, *filters) -> int:
@@ -880,7 +889,8 @@ def _launch_score(checks: list[dict]) -> int:
     if not checks:
         return 0
     weights = {"ok": 1.0, "warning": 0.5, "error": 0.0}
-    return round((sum(weights.get(item.get("status"), 0.0) for item in checks) / len(checks)) * 100)
+    raw_score = (sum(weights.get(item.get("status"), 0.0) for item in checks) / len(checks)) * 100
+    return int(raw_score + 0.5)
 
 
 def _default_admin_password_active(db: Session) -> bool:
@@ -1035,7 +1045,12 @@ def _seed_demo_workspace(db: Session, current_user: CurrentUser) -> dict:
                 )
             )
             created["chunks"] += 1
-        source = _upsert_document_source(
+        existing_source = (
+            db.query(DocumentSource)
+            .filter(DocumentSource.collection == collection, DocumentSource.document_name == document)
+            .first()
+        )
+        _upsert_document_source(
             db,
             collection=collection,
             document_name=document,
@@ -1043,7 +1058,7 @@ def _seed_demo_workspace(db: Session, current_user: CurrentUser) -> dict:
             source_url=f"demo://{collection}/{document}",
             source_updated_at=now,
         )
-        if not getattr(source, "id", None):
+        if not existing_source:
             created["sources"] += 1
 
     for item in cases:
@@ -1163,6 +1178,7 @@ def _default_eval_schedule() -> dict:
         "next_run_at": None,
         "last_due_run_at": None,
         "last_status": "not_configured",
+        "last_error": "",
     }
 
 
@@ -1188,8 +1204,17 @@ def _save_launch_setting(db: Session, key: str, value: dict, current_user: Curre
     return row
 
 
+def _persistable_eval_schedule(value: dict) -> dict:
+    return {key: item for key, item in value.items() if key not in EVAL_SCHEDULE_RUNTIME_FIELDS}
+
+
 def _eval_schedule_payload(db: Session) -> dict:
-    return {**_default_eval_schedule(), **_get_launch_setting(db, EVAL_SCHEDULE_SETTING_KEY)}
+    return {
+        **_default_eval_schedule(),
+        **_get_launch_setting(db, EVAL_SCHEDULE_SETTING_KEY),
+        "scheduler_poll_seconds": settings.eval_scheduler_poll_seconds,
+        "scheduler_runtime": "background",
+    }
 
 
 def _parse_schedule_time(value: str | None) -> datetime | None:
@@ -1263,7 +1288,7 @@ def _key_preview(prefix: str) -> str:
 def _audit_log(
     db: Session,
     *,
-    request: Request,
+    request: Request | None,
     current_user: CurrentUser,
     action: str,
     resource_type: str,
@@ -1279,7 +1304,7 @@ def _audit_log(
             resource_type=resource_type,
             resource_id=resource_id,
             collection=collection,
-            request_id=getattr(request.state, "request_id", None),
+            request_id=getattr(getattr(request, "state", None), "request_id", None),
             metadata_json=metadata or {},
         )
     )
@@ -1330,6 +1355,13 @@ class ChatFeedbackRequest(BaseModel):
 class ReviewUpdateRequest(BaseModel):
     status: Literal["open", "resolved", "dismissed"]
     reviewer_note: Annotated[str, StringConstraints(max_length=2000)] = ""
+
+
+class EvalScheduleUpdateRequest(BaseModel):
+    enabled: bool = False
+    interval_hours: int = Field(default=24, ge=1, le=720)
+    collection: Annotated[str, StringConstraints(max_length=100)] = ""
+    alert_email: Annotated[str, StringConstraints(max_length=255)] = ""
 
 
 class TokenResponse(BaseModel):
@@ -2693,15 +2725,14 @@ def export_eval_cases(
     }
 
 
-@app.post("/admin/eval-runs")
-@limiter.limit(settings.default_rate_limit)
-def run_eval_cases(
-    request: Request,
-    current_user: Annotated[CurrentUser, Depends(require_admin)],
-    db: Session = Depends(get_db),
-    collection: str = Query("", max_length=100),
-    limit: int = Query(50, ge=1, le=100),
-):
+def _create_evaluation_run(
+    *,
+    request: Request | None,
+    current_user: CurrentUser,
+    db: Session,
+    collection: str = "",
+    limit: int = 50,
+) -> EvaluationRun:
     query = db.query(EvaluationCase).filter(EvaluationCase.status == "active")
     if collection:
         query = query.filter(EvaluationCase.collection == collection)
@@ -2758,6 +2789,138 @@ def run_eval_cases(
             "passed": run.passed,
         },
     )
+    return run
+
+
+def _launch_scheduler_user() -> CurrentUser:
+    return CurrentUser(
+        username="launch-scheduler",
+        role="admin",
+        collections={"*"},
+        collection_permissions={"*": "write"},
+    )
+
+
+def _run_due_eval_schedule_job(
+    *,
+    db: Session,
+    current_user: CurrentUser,
+    request: Request | None = None,
+    force: bool = False,
+    source: str = "manual",
+) -> dict:
+    schedule = _eval_schedule_payload(db)
+    if not schedule.get("enabled"):
+        return {"skipped": True, "reason": "disabled", "schedule": schedule}
+
+    next_run_at = _parse_schedule_time(schedule.get("next_run_at"))
+    now = utc_now()
+    if next_run_at and next_run_at > now and not force:
+        return {"skipped": True, "reason": "not_due", "schedule": schedule}
+
+    collection = str(schedule.get("collection") or "")
+    try:
+        run = _create_evaluation_run(
+            request=request,
+            current_user=current_user,
+            db=db,
+            collection=collection,
+            limit=50,
+        )
+    except Exception as exc:
+        error_detail = str(exc.detail) if isinstance(exc, HTTPException) else f"{exc.__class__.__name__}: {exc}"
+        updated = {
+            **schedule,
+            "last_due_run_at": str(now),
+            "last_status": "failed",
+            "last_error": error_detail,
+            "next_run_at": _next_schedule_time(int(schedule.get("interval_hours") or 24), now=now),
+        }
+        _save_launch_setting(db, EVAL_SCHEDULE_SETTING_KEY, _persistable_eval_schedule(updated), current_user)
+        _audit_log(
+            db,
+            request=request,
+            current_user=current_user,
+            action="launch.eval_schedule.run_failed",
+            resource_type="launch_setting",
+            resource_id=EVAL_SCHEDULE_SETTING_KEY,
+            collection=collection or None,
+            metadata={"error": error_detail, "force": force, "source": source},
+        )
+        return {"skipped": False, "error": error_detail, "schedule": updated}
+
+    updated = {
+        **schedule,
+        "last_due_run_at": str(now),
+        "last_status": "passed" if run.passed else "failed",
+        "last_error": "",
+        "next_run_at": _next_schedule_time(int(schedule.get("interval_hours") or 24), now=now),
+    }
+    _save_launch_setting(db, EVAL_SCHEDULE_SETTING_KEY, _persistable_eval_schedule(updated), current_user)
+    _audit_log(
+        db,
+        request=request,
+        current_user=current_user,
+        action="launch.eval_schedule.run_due",
+        resource_type="launch_setting",
+        resource_id=EVAL_SCHEDULE_SETTING_KEY,
+        collection=collection or None,
+        metadata={"run_id": run.run_id, "passed": run.passed, "force": force, "source": source},
+    )
+    return {"skipped": False, "run": _eval_run_payload(run), "schedule": updated}
+
+
+def _run_eval_scheduler_tick(db_factory=SessionLocal) -> dict:
+    db = db_factory()
+    try:
+        result = _run_due_eval_schedule_job(
+            db=db,
+            current_user=_launch_scheduler_user(),
+            request=None,
+            force=False,
+            source="scheduler",
+        )
+        if not result.get("skipped"):
+            db.commit()
+            logger.info(
+                "launch.eval_schedule.tick",
+                extra={
+                    "status": result.get("schedule", {}).get("last_status"),
+                    "run_id": result.get("run", {}).get("run_id"),
+                    "error": result.get("error"),
+                },
+            )
+        return result
+    except Exception:
+        db.rollback()
+        logger.exception("launch.eval_schedule.tick_error")
+        return {"skipped": True, "reason": "scheduler_error"}
+    finally:
+        db.close()
+
+
+async def _eval_scheduler_loop() -> None:
+    while True:
+        await asyncio.sleep(settings.eval_scheduler_poll_seconds)
+        await asyncio.to_thread(_run_eval_scheduler_tick)
+
+
+@app.post("/admin/eval-runs")
+@limiter.limit(settings.default_rate_limit)
+def run_eval_cases(
+    request: Request,
+    current_user: Annotated[CurrentUser, Depends(require_admin)],
+    db: Session = Depends(get_db),
+    collection: str = Query("", max_length=100),
+    limit: int = Query(50, ge=1, le=100),
+):
+    run = _create_evaluation_run(
+        request=request,
+        current_user=current_user,
+        db=db,
+        collection=collection,
+        limit=limit,
+    )
     db.commit()
     return {"run": _eval_run_payload(run)}
 
@@ -2782,6 +2945,133 @@ def list_eval_runs(
         "runs": [_eval_run_payload(row) for row in rows],
         "summary": _eval_run_summary(rows),
     }
+
+
+@app.get("/admin/launch/readiness")
+@limiter.limit(settings.default_rate_limit)
+def launch_readiness(
+    request: Request,
+    current_user: Annotated[CurrentUser, Depends(require_admin)],
+    db: Session = Depends(get_db),
+):
+    return _launch_readiness_payload(db)
+
+
+@app.post("/admin/launch/demo-seed")
+@limiter.limit(settings.default_rate_limit)
+def seed_launch_demo_workspace(
+    request: Request,
+    current_user: Annotated[CurrentUser, Depends(require_admin)],
+    db: Session = Depends(get_db),
+):
+    result = _seed_demo_workspace(db, current_user)
+    _audit_log(
+        db,
+        request=request,
+        current_user=current_user,
+        action="launch.demo_seed",
+        resource_type="launch",
+        metadata=result,
+    )
+    _track_usage(
+        db,
+        current_user=current_user,
+        event_type="launch.demo_seed",
+        metadata=result,
+    )
+    db.commit()
+    return {**result, "readiness": _launch_readiness_payload(db)}
+
+
+@app.get("/admin/launch/connectors")
+@limiter.limit(settings.default_rate_limit)
+def launch_connectors(
+    request: Request,
+    current_user: Annotated[CurrentUser, Depends(require_admin)],
+):
+    return _connector_catalog_payload()
+
+
+@app.get("/admin/launch/deploy-checklist")
+@limiter.limit(settings.default_rate_limit)
+def launch_deploy_checklist(
+    request: Request,
+    current_user: Annotated[CurrentUser, Depends(require_admin)],
+    db: Session = Depends(get_db),
+):
+    return _deploy_checklist_payload(db)
+
+
+@app.get("/admin/launch/eval-schedule")
+@limiter.limit(settings.default_rate_limit)
+def get_launch_eval_schedule(
+    request: Request,
+    current_user: Annotated[CurrentUser, Depends(require_admin)],
+    db: Session = Depends(get_db),
+):
+    return {"schedule": _eval_schedule_payload(db)}
+
+
+@app.patch("/admin/launch/eval-schedule")
+@limiter.limit(settings.default_rate_limit)
+def update_launch_eval_schedule(
+    request: Request,
+    payload: EvalScheduleUpdateRequest,
+    current_user: Annotated[CurrentUser, Depends(require_admin)],
+    db: Session = Depends(get_db),
+):
+    existing = _eval_schedule_payload(db)
+    next_run_at = _next_schedule_time(payload.interval_hours) if payload.enabled else None
+    status_label = "scheduled" if payload.enabled else "paused"
+    value = {
+        **existing,
+        "enabled": payload.enabled,
+        "interval_hours": payload.interval_hours,
+        "collection": payload.collection.strip(),
+        "alert_email": payload.alert_email.strip(),
+        "next_run_at": next_run_at,
+        "last_status": status_label,
+        "last_error": "" if payload.enabled else existing.get("last_error", ""),
+    }
+    _save_launch_setting(db, EVAL_SCHEDULE_SETTING_KEY, _persistable_eval_schedule(value), current_user)
+    _audit_log(
+        db,
+        request=request,
+        current_user=current_user,
+        action="launch.eval_schedule.update",
+        resource_type="launch_setting",
+        resource_id=EVAL_SCHEDULE_SETTING_KEY,
+        collection=value["collection"] or None,
+        metadata=value,
+    )
+    db.commit()
+    return {
+        "schedule": {
+            **value,
+            "scheduler_poll_seconds": settings.eval_scheduler_poll_seconds,
+            "scheduler_runtime": "background",
+        }
+    }
+
+
+@app.post("/admin/launch/eval-schedule/run-due")
+@limiter.limit(settings.default_rate_limit)
+def run_due_launch_eval_schedule(
+    request: Request,
+    current_user: Annotated[CurrentUser, Depends(require_admin)],
+    db: Session = Depends(get_db),
+    force: bool = Query(False),
+):
+    result = _run_due_eval_schedule_job(
+        db=db,
+        current_user=current_user,
+        request=request,
+        force=force,
+        source="manual",
+    )
+    if not result.get("skipped"):
+        db.commit()
+    return result
 
 
 @app.get("/chat/sessions")

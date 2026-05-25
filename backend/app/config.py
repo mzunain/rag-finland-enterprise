@@ -57,6 +57,7 @@ class Settings(BaseSettings):
     source_aging_after_days: int = Field(default=30, ge=1, le=3650)
     source_stale_after_days: int = Field(default=90, ge=2, le=3650)
     source_sync_interval_hours: int = Field(default=24, ge=1, le=8760)
+    eval_scheduler_poll_seconds: int = Field(default=60, ge=10, le=3600)
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore", protected_namespaces=("settings_",))
 
