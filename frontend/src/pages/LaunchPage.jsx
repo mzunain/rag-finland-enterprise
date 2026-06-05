@@ -191,7 +191,7 @@ export default function LaunchPage() {
           <MetricCard label="Deploy gate" value={`${deployScore}%`} meta="Production checklist" icon={ServerCog} tone={scoreTone(deployScore)} />
         </div>
 
-        <Surface className="overflow-hidden border-slate-900 bg-slate-950 text-white">
+        <Surface className="overflow-hidden !border-slate-900 !bg-slate-950 text-white">
           <div className="grid gap-0 xl:grid-cols-[minmax(0,1fr)_27rem]">
             <div className="p-5 sm:p-6">
               <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
@@ -213,7 +213,7 @@ export default function LaunchPage() {
                     </div>
                     <StatusBadge tone={scoreTone(readinessScore)}>{readinessScore >= 80 ? 'ready' : 'needs work'}</StatusBadge>
                   </div>
-                  <ProgressBar value={readinessScore} tone={scoreTone(readinessScore)} className="mt-4 bg-white/10" />
+                  <ProgressBar value={readinessScore} tone={scoreTone(readinessScore)} className="mt-4 !bg-white/10" />
                 </div>
               </div>
 

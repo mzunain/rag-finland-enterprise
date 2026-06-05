@@ -1,6 +1,23 @@
 # RAG Finland Enterprise
 
+[![CI](https://github.com/mzunain/rag-finland-enterprise/actions/workflows/ci.yml/badge.svg)](https://github.com/mzunain/rag-finland-enterprise/actions/workflows/ci.yml)
+[![Retrieval Evaluation](https://github.com/mzunain/rag-finland-enterprise/actions/workflows/retrieval-eval.yml/badge.svg)](https://github.com/mzunain/rag-finland-enterprise/actions/workflows/retrieval-eval.yml)
+[![Release](https://img.shields.io/github/v/release/mzunain/rag-finland-enterprise)](https://github.com/mzunain/rag-finland-enterprise/releases)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 Enterprise-ready RAG application for global company knowledge bases, with strong Finnish, English, and Swedish language support. It includes document ingestion, pgvector retrieval, source citations, role-based access, audit logging, analytics, and deployment paths for local Docker, EU/on-prem environments, and free demo hosting.
+
+## Product Screens
+
+Screenshots show the local app with demo-style data.
+
+| Chat workbench | Launch Center |
+| --- | --- |
+| ![Chat workbench showing governed collections, answer modes, and source-grounded prompts](docs/assets/screenshots/chat-workbench.png) | ![Launch Center showing readiness, connector coverage, eval schedule, and deploy gate](docs/assets/screenshots/launch-center.png) |
+
+| Review Center | Analytics |
+| --- | --- |
+| ![Review Center showing flagged answers, live retrieval evals, and promoted cases](docs/assets/screenshots/review-center.png) | ![Analytics dashboard showing answer reliability, language demand, and governance signals](docs/assets/screenshots/analytics-dashboard.png) |
 
 ## Quick Start
 
@@ -60,11 +77,28 @@ Only `./run` needs Docker for normal app startup. `./run test` also uses local P
 - Auth and controls: JWT, API keys, RBAC, OIDC support, quotas, audit logs
 - Operations: Docker Compose, Prometheus metrics, TLS reverse proxy option, air-gapped package option
 
+## Architecture
+
+```mermaid
+flowchart LR
+    Frontend["React/Vite frontend"] --> API["FastAPI API"]
+    API --> Auth["JWT, API keys, RBAC"]
+    API --> DB["PostgreSQL + pgvector"]
+    API --> LLM["OpenAI-compatible LLM"]
+    API --> Eval["Review Center + eval gate"]
+    Sources["Documents and connector sources"] --> Ingestion["Parse, chunk, embed"]
+    Ingestion --> DB
+    DB --> Retrieval["Vector + lexical retrieval"]
+    Retrieval --> API
+```
+
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for system, ingestion, request-path, and governance diagrams.
+
 ## Implemented
 
 - Upload and parse PDF, DOCX, TXT, Markdown, and CSV files.
 - Chunk documents, generate embeddings, and store vectors in Postgres/pgvector.
-- Ask questions in Finnish or English and receive answers in the same language.
+- Ask questions in Finnish, Swedish, or English and receive answers in the same language.
 - Return citations with document name, page, chunk id, and relevance score.
 - Improve Finnish retrieval with stemming, compound decomposition, and lexical fallback.
 - Manage collections, documents, users, API keys, quotas, usage, and analytics from the UI.
@@ -108,6 +142,21 @@ PostgreSQL integration tests run in CI against `pgvector/pgvector:pg16`. Locally
 RUN_INTEGRATION_TESTS=1
 INTEGRATION_DATABASE_URL=postgresql+psycopg2://postgres:postgres@localhost:55432/rag
 ```
+
+## Retrieval Scorecard
+
+Deterministic seeded eval gate, last verified 2026-06-06:
+
+| Metric | Result | Threshold |
+| --- | ---: | ---: |
+| Cases passed | 5/5 | 100% |
+| Case pass rate | 100% | 100% |
+| Citation recall | 100% | 100% |
+| Grounded-answer accuracy | 100% | 100% |
+| No-answer accuracy | 100% | 100% |
+| Missing predictions | 0 | 0 |
+
+This is a regression baseline for known golden cases, not a production accuracy claim. See [docs/EVAL_SCORECARD.md](docs/EVAL_SCORECARD.md) for language/collection coverage and reproduction steps.
 
 ## CI Pipeline
 
@@ -219,6 +268,13 @@ docker compose -f deploy/onprem/docker-compose.airgapped.yml up -d
 - Open PRs with What, Why, and Testing notes.
 - Require CI to pass before merge.
 - Prefer squash merge for clean project history.
+
+## Community And Security
+
+- [Contributing guide](CONTRIBUTING.md)
+- [Security policy](SECURITY.md)
+- [Code of conduct](CODE_OF_CONDUCT.md)
+- [Changelog](CHANGELOG.md)
 
 ## License
 

@@ -1,0 +1,48 @@
+name: Feature request
+description: Propose an improvement or new capability.
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What user, operator, or reviewer problem should this solve?
+      placeholder: Enterprise admins need ...
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Describe the smallest useful version of the feature.
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Backend/API
+        - Frontend/UI
+        - Retrieval/evaluation
+        - Ingestion/connectors
+        - Auth/security
+        - Deployment/operations
+        - Documentation
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: What simpler or different approaches did you consider?
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: How will we know this is done?
+      placeholder: |
+        - Admins can ...
+        - CI covers ...
+        - Docs explain ...

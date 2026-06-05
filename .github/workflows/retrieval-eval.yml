@@ -14,7 +14,7 @@ jobs:
         working-directory: backend
     env:
       PYTHONPATH: .
-      DATABASE_URL: sqlite+pysqlite:///:memory:
+      DATABASE_URL: "sqlite+pysqlite:///:memory:"
       JWT_SECRET_KEY: scheduled-eval-local-secret
       OPENAI_API_KEY: ""
     steps:

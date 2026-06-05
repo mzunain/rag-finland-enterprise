@@ -4,7 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-No changes yet.
+### Added
+- **Project trust signals** with README badges, product screenshots, architecture diagram, and retrieval scorecard.
+- **Community and security files** including security policy, code of conduct, issue templates, and Dependabot configuration.
+- **Architecture and eval scorecard docs** for system flow, governance boundaries, and deterministic retrieval baseline.
+
+### Fixed
+- **Launch Center contrast** on the dark readiness panel by removing the background utility conflict.
+- **GitHub workflow YAML portability** by quoting database URLs that contain colon characters.
 
 ## [1.0.0] - 2026-06-06
 
