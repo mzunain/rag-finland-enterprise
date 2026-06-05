@@ -1,6 +1,6 @@
 # RAG Finland Enterprise
 
-Enterprise-ready RAG application for Finnish and English company knowledge bases. It includes document ingestion, pgvector retrieval, source citations, role-based access, audit logging, analytics, and deployment paths for local Docker, EU/on-prem environments, and free demo hosting.
+Enterprise-ready RAG application for global company knowledge bases, with strong Finnish, English, and Swedish language support. It includes document ingestion, pgvector retrieval, source citations, role-based access, audit logging, analytics, and deployment paths for local Docker, EU/on-prem environments, and free demo hosting.
 
 ## Quick Start
 

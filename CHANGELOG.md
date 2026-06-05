@@ -4,7 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+No changes yet.
+
+## [1.0.0] - 2026-06-06
+
 ### Added
+- **Contribution guide** with local setup, testing, pull request, security, and release expectations
 - **UI overhaul** — professional enterprise design: Slack-style chat, drag-upload admin, collection tabs, collapsible citations (PR #14)
 - **Swedish language support** — trilingual UI (EN/FI/SV) with ~50 Swedish translation keys, backend Swedish detection and prompts (PR #13)
 - **Analytics dashboard** with usage stats, language breakdown, collection usage, and recent queries (PR #11)
